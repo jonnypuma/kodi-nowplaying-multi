@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  kodi-np-multi:
+    build: ./kodi-np-multi
+    container_name: kodi-np-multi
+    image: kodi-np-multi
+    environment:
+      - KODI_HOST_1=${KODI_HOST_1}
+      - KODI_USERNAME_1=${KODI_USERNAME_1}
+      - KODI_PASSWORD_1=${KODI_PASSWORD_1}
+      # Server 2 (optional)
+      # - KODI_HOST_2=${KODI_HOST_2}
+      # - KODI_USERNAME_2=${KODI_USERNAME_2}
+      # - KODI_PASSWORD_2=${KODI_PASSWORD_2}
+      # Server 3 (optional)
+      # - KODI_HOST_3=${KODI_HOST_3}
+      # - KODI_USERNAME_3=${KODI_USERNAME_3}
+      # - KODI_PASSWORD_3=${KODI_PASSWORD_3}
+    env_file:
+      - ./.env
+    ports:
+      - 6001:6001
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - ./tmp:/tmp
