@@ -28,4 +28,5 @@ services:
         max-size: "10m"
         max-file: "3"
     volumes:
-      - ./tmp:/tmp
+      - ./kodi-np-multi/tmp:/tmp
+      - ./kodi-np-multi/preferences:/app/preferences
