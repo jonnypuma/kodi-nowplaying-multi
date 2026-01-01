@@ -1112,7 +1112,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         }}
         
         .toggle__input:checked + .toggle-track .toggle-indicator {{
-          background: #51cf66;
+          background: #4caf50;
           transform: translateX(30px);
           top: 3px;
         }}
@@ -1144,7 +1144,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
           width: 18px;
           height: 18px;
           border-radius: 50%;
-          background: #51cf66;
+          background: #4caf50;
           cursor: pointer;
           transition: all 0.3s ease;
         }}
@@ -1158,7 +1158,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
           width: 18px;
           height: 18px;
           border-radius: 50%;
-          background: #51cf66;
+          background: #4caf50;
           cursor: pointer;
           border: none;
           transition: all 0.3s ease;
@@ -1174,6 +1174,177 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
           font-size: 12px;
           margin-top: 5px;
           text-align: right;
+        }}
+        
+        /* Retro Shadow Header */
+        h1 {{
+          font-family: "Avant Garde", Avantgarde, "Century Gothic", CenturyGothic, "AppleGothic", sans-serif;
+          font-size: 35px;
+          padding: 15px 15px;
+          text-align: center;
+          text-transform: uppercase;
+          text-rendering: optimizeLegibility;
+        }}
+        h1.retroshadow {{
+          color: #4caf50;
+          letter-spacing: .05em;
+          text-shadow: 
+            3px 3px 3px #d5d5d5, 
+            6px 6px 0px rgba(0, 0, 0, 0.2);
+        }}
+        
+        /* New Dropdown Menu Styles */
+        .sec-center {{
+          position: relative;
+          max-width: 100%;
+          text-align: center;
+          z-index: 200;
+        }}
+        [type="checkbox"]:checked,
+        [type="checkbox"]:not(:checked){{
+          position: absolute;
+          left: -9999px;
+          opacity: 0;
+          pointer-events: none;
+        }}
+        .dropdown:checked + label,
+        .dropdown:not(:checked) + label{{
+          position: relative;
+          font-weight: 500;
+          font-size: 24px;
+          line-height: 2;
+          height: 50px;
+          transition: all 200ms linear;
+          border-radius: 4px;
+          width: 100%;
+          letter-spacing: 1px;
+          display: -webkit-inline-flex;
+          display: -ms-inline-flexbox;
+          display: inline-flex;
+          -webkit-align-items: center;
+          -moz-align-items: center;
+          -ms-align-items: center;
+          align-items: center;
+          -webkit-justify-content: center;
+          -moz-justify-content: center;
+          -ms-justify-content: center;
+          justify-content: center;
+          -ms-flex-pack: center;
+          text-align: center;
+          border: none;
+          background-color: #4caf50;
+          cursor: pointer;
+          color: #fff;
+          box-shadow: 0 12px 35px 0 rgba(76,175,80,.15);
+        }}
+        .dropdown:checked + label span,
+        .dropdown:not(:checked) + label span {{
+          color: #fff;
+        }}
+        .dropdown:checked + label:before,
+        .dropdown:not(:checked) + label:before{{
+          position: fixed;
+          top: 0;
+          left: 0;
+          content: '';
+          width: 100%;
+          height: 100%;
+          z-index: -1;
+          cursor: auto;
+          pointer-events: none;
+        }}
+        .dropdown:checked + label:before{{
+          pointer-events: auto;
+        }}
+        .dropdown:not(:checked) + label span {{
+          font-size: 24px;
+          margin-left: 10px;
+          transition: transform 200ms linear;
+        }}
+        .dropdown:checked + label span {{
+          transform: rotate(180deg);
+          font-size: 24px;
+          margin-left: 10px;
+          transition: transform 200ms linear;
+        }}
+        .section-dropdown {{
+          position: absolute;
+          padding: 5px;
+          background-color: rgba(0, 0, 0, 0.95);
+          top: 70px;
+          left: 0;
+          width: 100%;
+          border-radius: 4px;
+          display: block;
+          box-shadow: 0 14px 35px 0 rgba(0,0,0,0.8);
+          z-index: 2;
+          opacity: 0;
+          pointer-events: none;
+          transform: translateY(20px);
+          transition: all 200ms linear;
+        }}
+        .dropdown:checked ~ .section-dropdown{{
+          opacity: 1;
+          pointer-events: auto;
+          transform: translateY(0);
+        }}
+        .section-dropdown:before {{
+          position: absolute;
+          top: -20px;
+          left: 0;
+          width: 100%;
+          height: 20px;
+          content: '';
+          display: block;
+          z-index: 1;
+        }}
+        .section-dropdown:after {{
+          position: absolute;
+          top: -7px;
+          left: 30px;
+          width: 0; 
+          height: 0; 
+          border-left: 8px solid transparent;
+          border-right: 8px solid transparent; 
+          border-bottom: 8px solid rgba(0, 0, 0, 0.95);
+          content: '';
+          display: block;
+          z-index: 2;
+          transition: all 200ms linear;
+        }}
+        .section-dropdown a {{
+          position: relative;
+          color: #fff;
+          transition: all 200ms linear;
+          font-weight: 500;
+          font-size: 24px;
+          border-radius: 2px;
+          padding: 5px 0;
+          padding-left: 20px;
+          padding-right: 15px;
+          margin: 2px 0;
+          text-align: left;
+          text-decoration: none;
+          display: -ms-flexbox;
+          display: flex;
+          -webkit-align-items: center;
+          -moz-align-items: center;
+          -ms-align-items: center;
+          align-items: center;
+          justify-content: space-between;
+          -ms-flex-pack: distribute;
+        }}
+        .section-dropdown a:hover {{
+          color: #fff;
+          background-color: #4caf50;
+        }}
+        .section-dropdown a.current-server {{
+          color: #4caf50;
+          font-weight: bold;
+        }}
+        .section-dropdown a.current-server:hover {{
+          color: #fff;
+          background-color: #4caf50;
         }}
       </style>
       <script>
@@ -1639,7 +1810,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
                 console.log(`[DEBUG] Item changed from ${{lastItemId}} to ${{currentItemId}}`);
                 document.body.classList.add('fade-out');
                 setTimeout(() => {{
-                  location.reload(true); // Reload to show new track/episode
+                  window.location.href = '/loading'; // Show loading screen then reload
                 }}, 800);
               }}
               
@@ -1723,15 +1894,30 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         
         // Side Panel Functions
         function toggleSidePanel() {{
-          const panel = document.getElementById('sidePanel');
-          const arrow = document.querySelector('.side-panel-toggle-arrow');
-          panel.classList.toggle('open');
-          if (panel.classList.contains('open')) {{
-            arrow.style.transform = 'rotate(180deg)';
-          }} else {{
-            arrow.style.transform = 'rotate(0deg)';
+          try {{
+            const panel = document.getElementById('sidePanel');
+            const arrow = document.querySelector('.side-panel-toggle-arrow');
+            if (!panel) {{
+              console.error('[DEBUG] Side panel not found');
+              return;
+            }}
+            if (!arrow) {{
+              console.error('[DEBUG] Side panel arrow not found');
+              return;
+            }}
+            panel.classList.toggle('open');
+            if (panel.classList.contains('open')) {{
+              arrow.style.transform = 'rotate(180deg)';
+            }} else {{
+              arrow.style.transform = 'rotate(0deg)';
+            }}
+          }} catch (error) {{
+            console.error('[DEBUG] Error in toggleSidePanel:', error);
           }}
         }}
+        
+        // Ensure function is globally accessible
+        window.toggleSidePanel = toggleSidePanel;
         
         // Server Management Functions
         let currentServerId = null;
@@ -1742,35 +1928,86 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
           try {{
             const response = await fetch('/api/servers');
             const data = await response.json();
-            const select = document.getElementById('serverSelect');
-            select.innerHTML = '';
             
             if (data.servers && data.servers.length > 0) {{
-              data.servers.forEach(server => {{
-                const option = document.createElement('option');
-                option.value = server.id;
-                option.textContent = server.ip || server.host;
-                select.appendChild(option);
-              }});
-              
-              // Get current server and set it
+              // Get current server
               const currentResponse = await fetch('/api/current-server');
               const currentData = await currentResponse.json();
+              
               if (currentData.server_id) {{
-                select.value = currentData.server_id;
                 currentServerId = currentData.server_id;
               }} else {{
                 // Default to first server
-                select.value = data.servers[0].id;
                 currentServerId = data.servers[0].id;
-                switchServer();
+                // Switch to first server if none selected
+                await switchServerFromDropdown(data.servers[0].id);
+                return;
               }}
-            }} else {{
-              select.innerHTML = '<option value="">No servers configured</option>';
+              
+              // Populate new dropdown menu
+              populateServerDropdown(data.servers, currentData.server_id || data.servers[0].id);
             }}
           }} catch (error) {{
             console.error('Failed to load servers:', error);
-            document.getElementById('serverSelect').innerHTML = '<option value="">Error loading servers</option>';
+          }}
+        }}
+        
+        function populateServerDropdown(servers, currentServerId) {{
+          const dropdownList = document.getElementById('serverDropdownList');
+          const dropdownLabel = document.getElementById('serverDropdownLabel');
+          
+          if (!dropdownList || !dropdownLabel) return;
+          
+          dropdownList.innerHTML = '';
+          
+          if (servers && servers.length > 0) {{
+            servers.forEach(server => {{
+              const serverIp = server.ip || server.host;
+              const isCurrent = server.id === currentServerId;
+              
+              const link = document.createElement('a');
+              link.href = '#';
+              link.textContent = serverIp;
+              link.dataset.serverId = server.id;
+              link.onclick = function(e) {{
+                e.preventDefault();
+                const serverId = parseInt(this.dataset.serverId);
+                if (serverId && serverId !== currentServerId) {{
+                  switchServerFromDropdown(serverId);
+                }}
+                // Close dropdown
+                document.getElementById('serverDropdown').checked = false;
+              }};
+              
+              if (isCurrent) {{
+                link.classList.add('current-server');
+                dropdownLabel.innerHTML = `${{serverIp}} <span style="font-size: 24px; margin-left: 10px; transition: transform 200ms linear; color: #fff;">▼</span>`;
+              }}
+              
+              dropdownList.appendChild(link);
+            }});
+          }}
+        }}
+        
+        async function switchServerFromDropdown(serverId) {{
+          if (!serverId) return;
+          
+          try {{
+            const response = await fetch(`/api/switch-server/${{serverId}}`, {{
+              method: 'POST'
+            }});
+            const data = await response.json();
+            
+            if (data.success) {{
+              currentServerId = serverId;
+              // Show loading screen then reload
+              document.body.classList.add('fade-out');
+              setTimeout(() => {{
+                window.location.href = '/loading';
+              }}, 500);
+            }}
+          }} catch (error) {{
+            console.error('Failed to switch server:', error);
           }}
         }}
         
@@ -1796,6 +2033,55 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
           }}
         }}
         
+        // Preference Management Functions (Server-side storage with localStorage fallback)
+        async function loadPreferences() {{
+          try {{
+            const response = await fetch('/api/preferences');
+            if (response.ok) {{
+              const prefs = await response.json();
+              // Merge with localStorage as fallback
+              return {{
+                blurPreference: prefs.blurPreference || localStorage.getItem('blurPreference') || 'blurred',
+                blurAmount: prefs.blurAmount || localStorage.getItem('blurAmount') || '50',
+                overlayPreference: prefs.overlayPreference || localStorage.getItem('overlayPreference') || 'enabled',
+                overlayOpacity: prefs.overlayOpacity || localStorage.getItem('overlayOpacity') || '85',
+                marqueeInterval: prefs.marqueeInterval || localStorage.getItem('marqueeInterval') || '10',
+                fanartInterval: prefs.fanartInterval || localStorage.getItem('fanartInterval') || '20'
+              }};
+            }}
+          }} catch (error) {{
+            console.log('[DEBUG] Failed to load preferences from server, using localStorage:', error);
+          }}
+          // Fallback to localStorage
+          return {{
+            blurPreference: localStorage.getItem('blurPreference') || 'blurred',
+            blurAmount: localStorage.getItem('blurAmount') || '50',
+            overlayPreference: localStorage.getItem('overlayPreference') || 'enabled',
+            overlayOpacity: localStorage.getItem('overlayOpacity') || '85',
+            marqueeInterval: localStorage.getItem('marqueeInterval') || '10',
+            fanartInterval: localStorage.getItem('fanartInterval') || '20'
+          }};
+        }}
+        
+        async function savePreference(key, value) {{
+          // Save to localStorage immediately for responsiveness
+          localStorage.setItem(key, value);
+          
+          // Also save to server
+          try {{
+            const response = await fetch('/api/preferences', {{
+              method: 'POST',
+              headers: {{ 'Content-Type': 'application/json' }},
+              body: JSON.stringify({{ [key]: value }})
+            }});
+            if (!response.ok) {{
+              console.log(`[DEBUG] Failed to save preference ${{key}} to server, using localStorage only`);
+            }}
+          }} catch (error) {{
+            console.log(`[DEBUG] Error saving preference ${{key}} to server:`, error);
+          }}
+        }}
+        
         // Blur Toggle Functionality
         function toggleBlur() {{
           const content = document.querySelector('.content');
@@ -1809,13 +2095,13 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
             content.style.backdropFilter = `blur(${{savedBlurAmount / 10}}px)`;
             content.style.webkitBackdropFilter = `blur(${{savedBlurAmount / 10}}px)`;
             blurSliderContainer.style.display = 'block';
-            localStorage.setItem('blurPreference', 'blurred');
+            savePreference('blurPreference', 'blurred');
           }} else {{
             // Disable blur - hide it
             content.style.backdropFilter = 'none';
             content.style.webkitBackdropFilter = 'none';
             blurSliderContainer.style.display = 'none';
-            localStorage.setItem('blurPreference', 'non-blurred');
+            savePreference('blurPreference', 'non-blurred');
           }}
         }}
         
@@ -1831,7 +2117,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
             content.style.webkitBackdropFilter = `blur(${{blurValue / 10}}px)`;
           }}
           
-          localStorage.setItem('blurAmount', blurValue);
+          savePreference('blurAmount', blurValue.toString());
         }}
         
         // Overlay Toggle Functionality
@@ -1848,13 +2134,13 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
             content.style.backgroundColor = `rgba(0, 0, 0, ${{opacity * 0.85}})`;
             content.style.boxShadow = '0 8px 32px rgba(0,0,0,0.8)';
             opacitySliderContainer.style.display = 'block';
-            localStorage.setItem('overlayPreference', 'enabled');
+            savePreference('overlayPreference', 'enabled');
           }} else {{
             // Disable overlay - hide it
             content.style.backgroundColor = 'rgba(0, 0, 0, 0)';
             content.style.boxShadow = 'none';
             opacitySliderContainer.style.display = 'none';
-            localStorage.setItem('overlayPreference', 'disabled');
+            savePreference('overlayPreference', 'disabled');
           }}
         }}
         
@@ -1875,7 +2161,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
             content.style.boxShadow = 'none';
           }}
           
-          localStorage.setItem('overlayOpacity', opacityValue);
+          savePreference('overlayOpacity', opacityValue.toString());
         }}
         
         function updateMarqueeInterval(value) {{
@@ -1907,7 +2193,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
             }}
           }}, intervalValue * 1000);
           
-          localStorage.setItem('marqueeInterval', intervalValue);
+          savePreference('marqueeInterval', intervalValue.toString());
         }}
         
         function updateFanartInterval(value) {{
@@ -1925,22 +2211,24 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
             fanartInterval = setInterval(cycleFanarts, intervalValue * 1000);
           }}
           
-          localStorage.setItem('fanartInterval', intervalValue);
+          savePreference('fanartInterval', intervalValue.toString());
         }}
         
-        function initializeBlurToggle() {{
+        async function initializeBlurToggle() {{
           const content = document.querySelector('.content');
           const blurToggle = document.getElementById('blurToggle');
           const overlayToggle = document.getElementById('overlayToggle');
           const blurSliderContainer = document.getElementById('blurSliderContainer');
           const opacitySliderContainer = document.getElementById('opacitySliderContainer');
           
-          const savedBlurPreference = localStorage.getItem('blurPreference') || 'blurred';
-          const savedOverlayPreference = localStorage.getItem('overlayPreference') || 'enabled';
-          const savedBlurAmount = localStorage.getItem('blurAmount') || '50';
-          const savedOpacity = localStorage.getItem('overlayOpacity') || '85';
-          const savedMarqueeInterval = localStorage.getItem('marqueeInterval') || '10';
-          const savedFanartInterval = localStorage.getItem('fanartInterval') || '20';
+          // Load preferences from server (with localStorage fallback)
+          const prefs = await loadPreferences();
+          const savedBlurPreference = prefs.blurPreference;
+          const savedOverlayPreference = prefs.overlayPreference;
+          const savedBlurAmount = prefs.blurAmount;
+          const savedOpacity = prefs.overlayOpacity;
+          const savedMarqueeInterval = prefs.marqueeInterval;
+          const savedFanartInterval = prefs.fanartInterval;
           
           // Initialize blur toggle
           if (savedBlurPreference === 'blurred') {{
@@ -2006,13 +2294,13 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
           }}
         }}
         
-        function initializeAll() {{
+        async function initializeAll() {{
           // Wait a bit more for all elements to be rendered
-          setTimeout(() => {{
+          setTimeout(async () => {{
             initializeButton();
             startShimmerTimer();
             loadServers();
-            initializeBlurToggle();
+            await initializeBlurToggle();
           }}, 200);
         }}
         
@@ -2265,11 +2553,17 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         </div>
         
         <div style="overflow-y: auto; height: 100%; padding-top: 20px; padding-left: 15px; padding-right: 10px; box-sizing: border-box;">
-          <h2>Now playing on:
-            <select id="serverSelect" onchange="switchServer()">
-              <option value="">Loading servers...</option>
-            </select>
-          </h2>
+          <h1 class="retroshadow">Now Playing On</h1>
+          
+          <div class="side-panel-section">
+            <div class="sec-center">
+              <input class="dropdown" type="checkbox" id="serverDropdown" name="serverDropdown">
+              <label class="for-dropdown" for="serverDropdown" id="serverDropdownLabel">Select Server <span style="font-size: 24px; margin-left: 10px; transition: transform 200ms linear; color: #fff;">▼</span></label>
+              <div class="section-dropdown">
+                <div id="serverDropdownList"></div>
+              </div>
+            </div>
+          </div>
           
           <div class="side-panel-section">
             <div class="side-panel-row">

@@ -4,6 +4,8 @@ import os
 import urllib.parse
 import uuid
 import re
+import json
+from pathlib import Path
 from parser import route_media_display
 
 app = Flask(__name__)
@@ -151,6 +153,150 @@ def get_current_server():
         server_id = 1 if KODI_SERVERS else None
     return jsonify({"server_id": server_id})
 
+# Preferences storage
+PREFERENCES_DIR = Path("/app/preferences")
+PREFERENCES_FILE = PREFERENCES_DIR / "preferences.json"
+
+def ensure_preferences_dir():
+    """Ensure the preferences directory exists"""
+    try:
+        PREFERENCES_DIR.mkdir(parents=True, exist_ok=True)
+        print(f"[DEBUG] Preferences directory ensured: {PREFERENCES_DIR}, exists: {PREFERENCES_DIR.exists()}", flush=True)
+    except Exception as e:
+        print(f"[ERROR] Failed to create preferences directory: {e}", flush=True)
+        import traceback
+        print(f"[ERROR] Traceback: {traceback.format_exc()}", flush=True)
+
+def load_preferences():
+    """Load preferences from JSON file"""
+    ensure_preferences_dir()
+    if PREFERENCES_FILE.exists():
+        try:
+            with open(PREFERENCES_FILE, 'r') as f:
+                prefs = json.load(f)
+                print(f"[DEBUG] Loaded preferences from file: {prefs}", flush=True)
+                # Ensure it's a dict
+                if not isinstance(prefs, dict):
+                    print(f"[WARNING] Preferences file contains non-dict data, returning empty dict", flush=True)
+                    return {}
+                return prefs
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"[ERROR] Failed to load preferences: {e}", flush=True)
+            import traceback
+            print(f"[ERROR] Traceback: {traceback.format_exc()}", flush=True)
+            return {}
+    else:
+        print(f"[DEBUG] Preferences file does not exist yet: {PREFERENCES_FILE}", flush=True)
+    return {}
+
+def save_preferences(prefs):
+    """Save preferences to JSON file"""
+    ensure_preferences_dir()
+    try:
+        print(f"[DEBUG] Saving preferences to {PREFERENCES_FILE}", flush=True)
+        print(f"[DEBUG] Preferences data to save: {prefs}", flush=True)
+        print(f"[DEBUG] Preferences type: {type(prefs)}, Is dict: {isinstance(prefs, dict)}", flush=True)
+        
+        # Ensure prefs is a dict
+        if not isinstance(prefs, dict):
+            print(f"[ERROR] Cannot save preferences - not a dict: {type(prefs)}", flush=True)
+            return False
+        
+        # Write atomically using a temporary file first
+        temp_file = PREFERENCES_FILE.with_suffix('.tmp')
+        with open(temp_file, 'w') as f:
+            json.dump(prefs, f, indent=2)
+        
+        # Replace the original file atomically
+        temp_file.replace(PREFERENCES_FILE)
+        
+        print(f"[DEBUG] Successfully saved preferences to {PREFERENCES_FILE}", flush=True)
+        # Verify file was created
+        if PREFERENCES_FILE.exists():
+            file_size = PREFERENCES_FILE.stat().st_size
+            print(f"[DEBUG] Preferences file exists: {PREFERENCES_FILE.exists()}, size: {file_size} bytes", flush=True)
+            # Read back to verify
+            with open(PREFERENCES_FILE, 'r') as f:
+                verify_prefs = json.load(f)
+                print(f"[DEBUG] Verified saved preferences: {verify_prefs}", flush=True)
+        else:
+            print(f"[ERROR] Preferences file was not created at {PREFERENCES_FILE}", flush=True)
+            return False
+        return True
+    except IOError as e:
+        print(f"[ERROR] Failed to save preferences: {e}", flush=True)
+        import traceback
+        print(f"[ERROR] Traceback: {traceback.format_exc()}", flush=True)
+        return False
+
+@app.route("/api/preferences", methods=["GET"])
+def get_preferences():
+    """Get user preferences"""
+    prefs = load_preferences()
+    print(f"[DEBUG] GET preferences request, returning: {prefs}", flush=True)
+    return jsonify(prefs)
+
+@app.route("/api/preferences/test", methods=["GET"])
+def test_preferences():
+    """Test if preferences directory is writable"""
+    try:
+        ensure_preferences_dir()
+        test_file = PREFERENCES_DIR / "test.txt"
+        test_file.write_text("test")
+        test_file.unlink()
+        return jsonify({
+            "success": True,
+            "directory": str(PREFERENCES_DIR),
+            "directory_exists": PREFERENCES_DIR.exists(),
+            "writable": True
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "directory": str(PREFERENCES_DIR),
+            "directory_exists": PREFERENCES_DIR.exists() if PREFERENCES_DIR else False,
+            "writable": False,
+            "error": str(e)
+        }), 500
+
+@app.route("/api/preferences", methods=["POST"])
+def set_preferences():
+    """Save user preferences"""
+    try:
+        data = request.get_json()
+        print(f"[DEBUG] Received preferences POST request with data: {data}", flush=True)
+        if not data:
+            print("[ERROR] No data provided in preferences POST request", flush=True)
+            return jsonify({"success": False, "error": "No data provided"}), 400
+        
+        # Load existing preferences and merge with new ones
+        prefs = load_preferences()
+        print(f"[DEBUG] Existing preferences before merge: {prefs}", flush=True)
+        print(f"[DEBUG] New data to merge: {data}", flush=True)
+        
+        # Merge new data into existing preferences (update will overwrite existing keys)
+        prefs.update(data)
+        
+        print(f"[DEBUG] Merged preferences after update: {prefs}", flush=True)
+        print(f"[DEBUG] Type of prefs: {type(prefs)}, Is dict: {isinstance(prefs, dict)}", flush=True)
+        
+        # Verify we have a proper dict before saving
+        if not isinstance(prefs, dict):
+            print(f"[ERROR] Preferences is not a dict after merge: {type(prefs)}", flush=True)
+            return jsonify({"success": False, "error": "Invalid preferences format"}), 500
+        
+        if save_preferences(prefs):
+            print("[DEBUG] Preferences saved successfully", flush=True)
+            return jsonify({"success": True})
+        else:
+            print("[ERROR] save_preferences returned False", flush=True)
+            return jsonify({"success": False, "error": "Failed to save preferences"}), 500
+    except Exception as e:
+        print(f"[ERROR] Failed to set preferences: {e}", flush=True)
+        import traceback
+        print(f"[ERROR] Traceback: {traceback.format_exc()}", flush=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @app.route("/")
 def index():
     return """
@@ -244,39 +390,20 @@ def index():
             }
             
             
-            .side-panel h2 {
-                color: white;
-                margin: 0 0 20px 0;
-                font-size: 1.5em;
-                display: flex;
-                align-items: center;
-                gap: 10px;
+            h1 {
+                font-family: "Avant Garde", Avantgarde, "Century Gothic", CenturyGothic, "AppleGothic", sans-serif;
+                font-size: 35px;
+                padding: 15px 15px;
+                text-align: center;
+                text-transform: uppercase;
+                text-rendering: optimizeLegibility;
             }
-            
-            .side-panel select {
-                background: rgba(255, 255, 255, 0.1);
-                border: 1px solid rgba(255, 255, 255, 0.2);
-                color: white;
-                padding: 8px 12px;
-                border-radius: 5px;
-                font-size: 14px;
-                cursor: pointer;
-                min-width: 150px;
-            }
-            
-            .side-panel select option {
-                background: white;
-                color: black;
-            }
-            
-            .side-panel select option:checked {
-                background: #51cf66;
-                color: white;
-            }
-            
-            .side-panel select:focus {
-                outline: 2px solid #51cf66;
-                outline-offset: 2px;
+            h1.retroshadow {
+                color: #4caf50;
+                letter-spacing: .05em;
+                text-shadow: 
+                    3px 3px 3px #d5d5d5, 
+                    6px 6px 0px rgba(0, 0, 0, 0.2);
             }
             
             .side-panel-section {
@@ -287,6 +414,160 @@ def index():
             
             .side-panel-section:last-child {
                 border-bottom: none;
+            }
+            
+            /* New Dropdown Menu Styles */
+            .sec-center {
+                position: relative;
+                max-width: 100%;
+                text-align: center;
+                z-index: 200;
+            }
+            [type="checkbox"]:checked,
+            [type="checkbox"]:not(:checked){
+                position: absolute;
+                left: -9999px;
+                opacity: 0;
+                pointer-events: none;
+            }
+            .dropdown:checked + label,
+            .dropdown:not(:checked) + label{
+                position: relative;
+                font-weight: 500;
+                font-size: 24px;
+                line-height: 2;
+                height: 50px;
+                transition: all 200ms linear;
+                border-radius: 4px;
+                width: 100%;
+                letter-spacing: 1px;
+                display: -webkit-inline-flex;
+                display: -ms-inline-flexbox;
+                display: inline-flex;
+                -webkit-align-items: center;
+                -moz-align-items: center;
+                -ms-align-items: center;
+                align-items: center;
+                -webkit-justify-content: center;
+                -moz-justify-content: center;
+                -ms-justify-content: center;
+                justify-content: center;
+                -ms-flex-pack: center;
+                text-align: center;
+                border: none;
+                background-color: #4caf50;
+                cursor: pointer;
+                color: #fff;
+                box-shadow: 0 12px 35px 0 rgba(76,175,80,.15);
+            }
+            .dropdown:checked + label span,
+            .dropdown:not(:checked) + label span {
+                color: #fff;
+            }
+            .dropdown:checked + label:before,
+            .dropdown:not(:checked) + label:before{
+                position: fixed;
+                top: 0;
+                left: 0;
+                content: '';
+                width: 100%;
+                height: 100%;
+                z-index: -1;
+                cursor: auto;
+                pointer-events: none;
+            }
+            .dropdown:checked + label:before{
+                pointer-events: auto;
+            }
+            .dropdown:not(:checked) + label span {
+                font-size: 24px;
+                margin-left: 10px;
+                transition: transform 200ms linear;
+            }
+            .dropdown:checked + label span {
+                transform: rotate(180deg);
+                font-size: 24px;
+                margin-left: 10px;
+                transition: transform 200ms linear;
+            }
+            .section-dropdown {
+                position: absolute;
+                padding: 5px;
+                background-color: rgba(0, 0, 0, 0.95);
+                top: 70px;
+                left: 0;
+                width: 100%;
+                border-radius: 4px;
+                display: block;
+                box-shadow: 0 14px 35px 0 rgba(0,0,0,0.8);
+                z-index: 2;
+                opacity: 0;
+                pointer-events: none;
+                transform: translateY(20px);
+                transition: all 200ms linear;
+            }
+            .dropdown:checked ~ .section-dropdown{
+                opacity: 1;
+                pointer-events: auto;
+                transform: translateY(0);
+            }
+            .section-dropdown:before {
+                position: absolute;
+                top: -20px;
+                left: 0;
+                width: 100%;
+                height: 20px;
+                content: '';
+                display: block;
+                z-index: 1;
+            }
+            .section-dropdown:after {
+                position: absolute;
+                top: -7px;
+                left: 30px;
+                width: 0; 
+                height: 0; 
+                border-left: 8px solid transparent;
+                border-right: 8px solid transparent; 
+                border-bottom: 8px solid rgba(0, 0, 0, 0.95);
+                content: '';
+                display: block;
+                z-index: 2;
+                transition: all 200ms linear;
+            }
+            .section-dropdown a {
+                position: relative;
+                color: #fff;
+                transition: all 200ms linear;
+                font-weight: 500;
+                font-size: 24px;
+                border-radius: 2px;
+                padding: 5px 0;
+                padding-left: 20px;
+                padding-right: 15px;
+                margin: 2px 0;
+                text-align: left;
+                text-decoration: none;
+                display: -ms-flexbox;
+                display: flex;
+                -webkit-align-items: center;
+                -moz-align-items: center;
+                -ms-align-items: center;
+                align-items: center;
+                justify-content: space-between;
+                -ms-flex-pack: distribute;
+            }
+            .section-dropdown a:hover {
+                color: #fff;
+                background-color: #4caf50;
+            }
+            .section-dropdown a.current-server {
+                color: #4caf50;
+                font-weight: bold;
+            }
+            .section-dropdown a.current-server:hover {
+                color: #fff;
+                background-color: #4caf50;
             }
             
             /* Toggle Component Styles */
@@ -350,7 +631,7 @@ def index():
             }
             
             .toggle__input:checked + .toggle-track .toggle-indicator {
-                background: #51cf66;
+                background: #4caf50;
                 transform: translateX(30px);
                 top: 3px;
             }
@@ -373,12 +654,18 @@ def index():
                 <div class="side-panel-toggle-arrow">◄</div>
             </div>
             
-            <div style="overflow-y: auto; height: 100%;">
-                <h2>Now playing on:
-                    <select id="serverSelect" onchange="switchServer()">
-                        <option value="">Loading servers...</option>
-                    </select>
-                </h2>
+            <div style="overflow-y: auto; height: 100%; padding-left: 15px; padding-right: 10px; padding-top: 20px;">
+                <h1 class="retroshadow">Now Playing On</h1>
+                
+                <div class="side-panel-section">
+                    <div class="sec-center">
+                        <input class="dropdown" type="checkbox" id="serverDropdown" name="serverDropdown">
+                        <label class="for-dropdown" for="serverDropdown" id="serverDropdownLabel">Select Server <span style="font-size: 24px; margin-left: 10px; transition: transform 200ms linear; color: #fff;">▼</span></label>
+                        <div class="section-dropdown">
+                            <div id="serverDropdownList"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -410,52 +697,74 @@ def index():
                 try {
                     const response = await fetch('/api/servers');
                     const data = await response.json();
-                    const select = document.getElementById('serverSelect');
-                    select.innerHTML = '';
                     
                     if (data.servers && data.servers.length > 0) {
-                        data.servers.forEach(server => {
-                            const option = document.createElement('option');
-                            option.value = server.id;
-                            option.textContent = server.ip || server.host;
-                            select.appendChild(option);
-                        });
-                        
-                        // Get current server and set it
+                        // Get current server
                         const currentResponse = await fetch('/api/current-server');
                         const currentData = await currentResponse.json();
-                        let selectedServer = null;
                         
                         if (currentData.server_id) {
-                            select.value = currentData.server_id;
                             currentServerId = currentData.server_id;
-                            // Find the server IP for the message
-                            selectedServer = data.servers.find(s => s.id === currentData.server_id);
                         } else {
                             // Default to first server
-                            select.value = data.servers[0].id;
                             currentServerId = data.servers[0].id;
-                            selectedServer = data.servers[0];
-                            switchServer();
+                            // Switch to first server if none selected
+                            await switchServerFromDropdown(data.servers[0].id);
+                            return;
                         }
                         
+                        // Populate new dropdown menu
+                        populateServerDropdown(data.servers, currentData.server_id || data.servers[0].id);
+                        
                         // Update the message with server IP
+                        const selectedServer = data.servers.find(s => s.id === currentServerId);
                         if (selectedServer) {
                             updateServerMessage(selectedServer.ip || selectedServer.host);
                         }
-                    } else {
-                        select.innerHTML = '<option value="">No servers configured</option>';
                     }
                 } catch (error) {
                     console.error('Failed to load servers:', error);
-                    document.getElementById('serverSelect').innerHTML = '<option value="">Error loading servers</option>';
                 }
             }
             
-            async function switchServer() {
-                const select = document.getElementById('serverSelect');
-                const serverId = parseInt(select.value);
+            function populateServerDropdown(servers, currentServerId) {
+                const dropdownList = document.getElementById('serverDropdownList');
+                const dropdownLabel = document.getElementById('serverDropdownLabel');
                 
+                if (!dropdownList || !dropdownLabel) return;
+                
+                dropdownList.innerHTML = '';
+                
+                if (servers && servers.length > 0) {
+                    servers.forEach(server => {
+                        const serverIp = server.ip || server.host;
+                        const isCurrent = server.id === currentServerId;
+                        
+                        const link = document.createElement('a');
+                        link.href = '#';
+                        link.textContent = serverIp;
+                        link.dataset.serverId = server.id;
+                        link.onclick = function(e) {
+                            e.preventDefault();
+                            const serverId = parseInt(this.dataset.serverId);
+                            if (serverId && serverId !== currentServerId) {
+                                switchServerFromDropdown(serverId);
+                            }
+                            // Close dropdown
+                            document.getElementById('serverDropdown').checked = false;
+                        };
+                        
+                        if (isCurrent) {
+                            link.classList.add('current-server');
+                            dropdownLabel.innerHTML = `${serverIp} <span style="font-size: 24px; margin-left: 10px; transition: transform 200ms linear; color: #fff;">▼</span>`;
+                        }
+                        
+                        dropdownList.appendChild(link);
+                    });
+                }
+            }
+            
+            async function switchServerFromDropdown(serverId) {
                 if (!serverId) return;
                 
                 try {
@@ -468,13 +777,17 @@ def index():
                         currentServerId = serverId;
                         
                         // Update message with new server IP
-                        const option = select.options[select.selectedIndex];
-                        const serverIp = option.textContent;
-                        updateServerMessage(serverIp);
+                        const serversResponse = await fetch('/api/servers');
+                        const serversData = await serversResponse.json();
+                        const selectedServer = serversData.servers.find(s => s.id === serverId);
+                        if (selectedServer) {
+                            updateServerMessage(selectedServer.ip || selectedServer.host);
+                        }
                         
-                        // Reload page to poll the new server
+                        // Show loading screen then reload
+                        document.body.classList.add('fade-out');
                         setTimeout(() => {
-                            location.reload();
+                            window.location.href = '/loading';
                         }, 500);
                     }
                 } catch (error) {
@@ -498,7 +811,7 @@ def index():
                         if (currentState === true && lastPlaybackState === false) {
                             document.body.classList.add('fade-out');
                             setTimeout(() => {
-                                window.location.href = '/nowplaying';
+                                window.location.href = '/loading';
                             }, 1500);
                         }
                         lastPlaybackState = currentState;
@@ -1622,6 +1935,135 @@ def favicon():
         print(f"[ERROR] Favicon route error: {e}", flush=True)
         return "Favicon error", 500
 
+@app.route("/loading")
+def loading():
+    """Return loading screen HTML with animated LOADING text"""
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Loading...</title>
+        <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+        <style>
+            @import url("https://fonts.googleapis.com/css?family=Montserrat:900");
+            
+            body {
+                background-color: #141414;
+                padding: 0;
+                margin: 0;
+                height: 100vh;
+                width: 100vw;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-family: "Montserrat", sans-serif;
+                opacity: 0;
+                animation: fadeIn 0.5s ease forwards;
+            }
+            
+            @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
+            
+            .loader {
+                -webkit-perspective: 700px;
+                perspective: 700px;
+            }
+            
+            .loader > span {
+                font-size: 130px;
+                display: inline-block;
+                animation: flip 2.6s infinite linear;
+                transform-origin: 0 70%;
+                transform-style: preserve-3d;
+                -webkit-transform-style: preserve-3d;
+                color: #4caf50;
+            }
+            
+            @keyframes flip {
+                35% {
+                    transform: rotateX(360deg);
+                }
+                100% {
+                    transform: rotateX(360deg);
+                }
+            }
+            
+            .loader > span:nth-child(even) {
+                color: white;
+            }
+            
+            .loader > span:nth-child(2) {
+                animation-delay: 0.3s;
+            }
+            
+            .loader > span:nth-child(3) {
+                animation-delay: 0.6s;
+            }
+            
+            .loader > span:nth-child(4) {
+                animation-delay: 0.9s;
+            }
+            
+            .loader > span:nth-child(5) {
+                animation-delay: 1.2s;
+            }
+            
+            .loader > span:nth-child(6) {
+                animation-delay: 1.5s;
+            }
+            
+            .loader > span:nth-child(7) {
+                animation-delay: 1.8s;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="loader">
+            <span>L</span>
+            <span>O</span>
+            <span>A</span>
+            <span>D</span>
+            <span>I</span>
+            <span>N</span>
+            <span>G</span>
+        </div>
+        <script>
+            // Fetch the nowplaying content and replace this page
+            function fetchNowplayingContent() {
+                fetch('/nowplaying')
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}`);
+                        }
+                        return response.text();
+                    })
+                    .then(html => {
+                        // Fade out loading screen
+                        document.body.style.opacity = '0';
+                        document.body.style.transition = 'opacity 0.5s ease';
+                        
+                        setTimeout(() => {
+                            // Replace the entire document
+                            document.open();
+                            document.write(html);
+                            document.close();
+                        }, 500);
+                    })
+                    .catch(error => {
+                        console.error('Failed to fetch nowplaying content:', error);
+                        // Fallback to full page reload
+                        window.location.href = '/nowplaying';
+                    });
+            }
+            
+            // Start fetching after a short delay to ensure loading screen is visible
+            setTimeout(fetchNowplayingContent, 500);
+        </script>
+    </body>
+    </html>
+    """
 
 @app.route("/nowplaying")
 def now_playing():
@@ -1937,7 +2379,7 @@ def generate_fallback_html(item, progress_data):
             .status {{
                 font-size: 1.2em;
                 margin-top: 20px;
-                color: {'#ff6b6b' if paused else '#51cf66'};
+                color: {'#ff6b6b' if paused else '#4caf50'};
             }}
         </style>
     </head>
