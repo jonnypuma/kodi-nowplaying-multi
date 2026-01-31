@@ -1407,6 +1407,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         let duration = {duration};
         let paused = {str(paused).lower()};
         let lastPlaybackState = null;
+        let noPlayCount = 0;
 
         function updateTime() {{
           if (!paused && elapsed < duration) {{
@@ -1610,6 +1611,18 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
               const currentState = data.playing;
               const currentItemId = data.item_id;
               const currentPaused = data.paused;
+              const isError = data.error === true;
+
+              if (isError) {{
+                console.log('[DEBUG] Poll playback error flagged, skipping state changes');
+                return;
+              }}
+
+              if (currentState) {{
+                noPlayCount = 0;
+              }} else {{
+                noPlayCount += 1;
+              }}
               
               // Update playback button based on pause state
               if (currentPaused !== lastPausedState) {{
@@ -1624,10 +1637,12 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
                 lastPausedState = currentPaused; // Initialize lastPausedState
                 updatePlaybackButton(currentPaused);
               }} else if (currentState !== lastPlaybackState) {{
-                document.body.classList.add('fade-out');
-                setTimeout(() => {{
-                  window.location.href = '/'; // Redirect to root when playback stops
-                }}, 1500);
+                if (lastPlaybackState === true && currentState === false && noPlayCount >= 2) {{
+                  document.body.classList.add('fade-out');
+                  setTimeout(() => {{
+                    window.location.href = '/'; // Redirect to root when playback stops
+                  }}, 1500);
+                }}
                 lastPlaybackState = currentState;
               }}
               // Check for item change (new track/episode while playing)

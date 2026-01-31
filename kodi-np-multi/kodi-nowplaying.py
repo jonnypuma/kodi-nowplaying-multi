@@ -1,15 +1,21 @@
-from flask import Flask, render_template_string, request, jsonify, send_file, session
+from flask import Flask, render_template_string, request, jsonify, send_file, session, has_request_context
 import requests
 import os
 import urllib.parse
 import uuid
 import re
 import json
+import threading
+import time
 from pathlib import Path
 from parser import route_media_display
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", uuid.uuid4().hex)  # For session management
+
+load_jobs = {}
+load_lock = threading.Lock()
+active_server_override = threading.local()
 
 HEADERS = {"Content-Type": "application/json"}
 
@@ -69,9 +75,14 @@ KODI_SERVERS = parse_kodi_servers()
 
 def get_active_server():
     """Get the currently active server from session, or default to first server"""
-    server_id = session.get('active_server_id', 1)
-    if server_id in KODI_SERVERS:
-        return KODI_SERVERS[server_id]
+    if has_request_context():
+        server_id = session.get('active_server_id', 1)
+        if server_id in KODI_SERVERS:
+            return KODI_SERVERS[server_id]
+    else:
+        server_id = getattr(active_server_override, "server_id", None)
+        if server_id in KODI_SERVERS:
+            return KODI_SERVERS[server_id]
     # Fallback to first server
     if KODI_SERVERS:
         return list(KODI_SERVERS.values())[0]
@@ -143,6 +154,7 @@ def switch_server(server_id):
         return jsonify({"success": False, "error": "Server not found"}), 404
     
     session['active_server_id'] = server_id
+    set_persisted_server_id(server_id)
     return jsonify({"success": True, "server_id": server_id})
 
 @app.route("/api/current-server")
@@ -150,7 +162,12 @@ def get_current_server():
     """Get the currently active server ID"""
     server_id = session.get('active_server_id', 1)
     if server_id not in KODI_SERVERS:
-        server_id = 1 if KODI_SERVERS else None
+        persisted = get_persisted_server_id()
+        if persisted:
+            server_id = persisted
+            session['active_server_id'] = persisted
+        else:
+            server_id = 1 if KODI_SERVERS else None
     return jsonify({"server_id": server_id})
 
 # Preferences storage
@@ -228,6 +245,31 @@ def save_preferences(prefs):
         import traceback
         print(f"[ERROR] Traceback: {traceback.format_exc()}", flush=True)
         return False
+
+def get_persisted_server_id():
+    prefs = load_preferences()
+    server_id = prefs.get("active_server_id")
+    try:
+        server_id = int(server_id)
+    except (TypeError, ValueError):
+        return None
+    return server_id if server_id in KODI_SERVERS else None
+
+def set_persisted_server_id(server_id: int):
+    prefs = load_preferences()
+    prefs["active_server_id"] = server_id
+    return save_preferences(prefs)
+
+@app.before_request
+def hydrate_server_session():
+    try:
+        server_id = session.get('active_server_id')
+        if server_id not in KODI_SERVERS:
+            persisted = get_persisted_server_id()
+            if persisted and persisted in KODI_SERVERS:
+                session['active_server_id'] = persisted
+    except Exception as e:
+        print(f"[WARNING] Failed to hydrate active server: {e}", flush=True)
 
 @app.route("/api/preferences", methods=["GET"])
 def get_preferences():
@@ -806,6 +848,11 @@ def index():
                     })
                     .then(data => {
                         const currentState = data.playing;
+                        const isError = data.error === true;
+                        if (isError) {
+                            console.log('[DEBUG] Poll playback error flagged, skipping redirect');
+                            return;
+                        }
                         // Only fade out and redirect if media starts playing (transitions from false to true)
                         // Don't fade if transitioning from true to false (that would make screen dim)
                         if (currentState === true && lastPlaybackState === false) {
@@ -1037,7 +1084,7 @@ def kodi_rpc(method, params=None, server_id=None):
 
 
 
-def prepare_and_download_art(item, session_id):
+def prepare_and_download_art(item, session_id, progress_cb=None):
     downloaded = {}
     
     # Get active server for this request
@@ -1332,11 +1379,39 @@ def prepare_and_download_art(item, session_id):
     
     print(f"[DEBUG] Total fanart variants found: {list(fanart_variants.keys())}", flush=True)
 
+    def art_label(art_key: str) -> str:
+        if art_key in ["poster", "front", "back", "thumbnail", "season.poster"]:
+            return "Loading posters"
+        if art_key.startswith("fanart") or art_key.startswith("extrafanart"):
+            return "Loading fanart"
+        return "Loading artwork"
+
+    art_tasks = []
+    for art_type in ART_TYPES:
+        if art_map.get(art_type):
+            art_tasks.append(("art", art_type))
+    for variant_key in fanart_variants.keys():
+        if variant_key != "fanart":
+            art_tasks.append(("fanart", variant_key))
+
+    total_tasks = len(art_tasks)
+    task_index = 0
+
+    def update_art_progress(label: str):
+        nonlocal task_index
+        task_index += 1
+        if progress_cb and total_tasks:
+            progress_cb(task_index, total_tasks, label)
+
+    if progress_cb and total_tasks == 0:
+        progress_cb(1, 1, "Loading artwork")
+
     for art_type in ART_TYPES:
         raw_path = art_map.get(art_type)
         print(f"[DEBUG] Processing art_type: {art_type}, raw_path: {raw_path}", flush=True)
         if not raw_path:
             continue
+        label = art_label(art_type)
 
         if raw_path and raw_path.startswith("image://"):
             raw_path = urllib.parse.unquote(raw_path[len("image://"):])
@@ -1698,6 +1773,8 @@ def prepare_and_download_art(item, session_id):
                                 pass
                     except Exception as fallback_construct_e:
                         print(f"[DEBUG] Failed to construct fallback paths for {art_type}: {fallback_construct_e}")
+        if progress_cb and total_tasks:
+            update_art_progress(label)
 
     # Process fanart variants for slideshow
     if len(fanart_variants) > 1:
@@ -1707,6 +1784,7 @@ def prepare_and_download_art(item, session_id):
         for variant_key, variant_path in fanart_variants.items():
             if variant_key == "fanart":
                 continue  # Skip the main fanart as it's already processed
+            label = "Loading fanart"
                 
             try:
                 # Prepare download for this fanart variant
@@ -1873,6 +1951,8 @@ def prepare_and_download_art(item, session_id):
                             
             except Exception as e:
                 print(f"[ERROR] Failed to process fanart variant {variant_key}: {e}", flush=True)
+            if progress_cb and total_tasks:
+                update_art_progress(label)
     
     # Final debug logging
     final_fanart_count = len([k for k in downloaded.keys() if k.startswith(("fanart", "extrafanart"))])
@@ -1934,6 +2014,336 @@ def favicon():
     except Exception as e:
         print(f"[ERROR] Favicon route error: {e}", flush=True)
         return "Favicon error", 500
+
+def build_nowplaying_html(progress_cb=None):
+    def update(progress, message):
+        if progress_cb:
+            progress_cb(progress, message)
+
+    # Get active players - this is critical, so if it fails, show error
+    try:
+        update(5, "Checking player")
+        active_response = kodi_rpc("Player.GetActivePlayers")
+        active = active_response.get("result") if active_response else None
+        if not active:
+            update(100, "Idle")
+            return render_template_string(index())
+
+        player_id = active[0]["playerid"]
+        
+        # Get current item - this is critical, so if it fails, show error
+        try:
+            update(12, "Loading item")
+            item_response = kodi_rpc("Player.GetItem", {
+                "playerid": player_id,
+                "properties": [
+                    "title", "album", "artist", "season", "episode", "showtitle",
+                        "tvshowid", "duration", "file", "director", "art", "plot", 
+                        "cast", "resume", "genre", "rating", "streamdetails", "year"
+                ]
+            })
+            result = item_response.get("result", {})
+            item = result.get("item", {})
+        except Exception as e:
+            print(f"[ERROR] Failed to get current item: {e}", flush=True)
+            raise e  # This is critical, so re-raise
+        
+        # Get item type to know which API call to make
+        playback_type = item.get("type", "unknown")
+        
+        # Initialize details with basic fallback structure
+        details = {
+            "album": {"title": item.get("album", ""), "year": item.get("year", "")},
+            "artist": {"label": ", ".join(item.get("artist", [])) if item.get("artist") else "Unknown Artist"}
+        }
+        
+        # Get enhanced details for episodes, movies, and songs
+        update(20, "Loading metadata")
+        print(f"[DEBUG] Playback type detected: {playback_type}", flush=True)
+        print(f"[DEBUG] Available IDs - songid: {item.get('songid')}, albumid: {item.get('albumid')}, artistid: {item.get('artistid')}", flush=True)
+        if playback_type == "episode":
+            try:
+                update(24, "Loading episode metadata")
+                print(f"[DEBUG] Getting enhanced details for episode", flush=True)
+                episode_response = kodi_rpc("VideoLibrary.GetEpisodeDetails", {
+                    "episodeid": item.get("id"),
+                "properties": ["streamdetails", "genre", "director", "cast", "uniqueid", "rating", "studio"]
+            })
+                if episode_response and episode_response.get("result"):
+                    episode_details = episode_response["result"].get("episodedetails", {})
+                    # Merge enhanced details with basic item data
+                    details.update(episode_details)
+                    # Ensure basic item data is preserved
+                    details.update({
+                        "title": item.get("title", ""),
+                        "plot": item.get("plot", ""),
+                        "season": item.get("season", 0),
+                        "episode": item.get("episode", 0),
+                        "showtitle": item.get("showtitle", ""),
+                        "director": item.get("director", []),
+                        "cast": item.get("cast", []),
+                        "year": item.get("year", "")
+                    })
+                    print(f"[DEBUG] Enhanced episode details loaded", flush=True)
+            except Exception as e:
+                print(f"[WARNING] Failed to get enhanced episode details: {e}", flush=True)
+                print(f"[DEBUG] Using basic item data for {playback_type}", flush=True)
+        elif playback_type == "movie":
+            try:
+                update(24, "Loading movie metadata")
+                print(f"[DEBUG] Getting enhanced details for movie", flush=True)
+                movie_response = kodi_rpc("VideoLibrary.GetMovieDetails", {
+                    "movieid": item.get("id"),
+                "properties": ["streamdetails", "genre", "director", "cast", "uniqueid", "rating", "studio", "tagline"]
+            })
+                if movie_response and movie_response.get("result"):
+                    movie_details = movie_response["result"].get("moviedetails", {})
+                    # Merge enhanced details with basic item data
+                    details.update(movie_details)
+                    # Ensure basic item data is preserved
+                    details.update({
+                        "title": item.get("title", ""),
+                        "plot": item.get("plot", ""),
+                        "director": item.get("director", []),
+                        "cast": item.get("cast", []),
+                        "year": item.get("year", "")
+                    })
+                    print(f"[DEBUG] Enhanced movie details loaded", flush=True)
+            except Exception as e:
+                print(f"[WARNING] Failed to get enhanced movie details: {e}", flush=True)
+                print(f"[DEBUG] Using basic item data for {playback_type}", flush=True)
+        elif playback_type == "song":
+            try:
+                update(24, "Loading song metadata")
+                print(f"[DEBUG] Getting enhanced details for song", flush=True)
+                print(f"[DEBUG] Basic item ID: {item.get('id')}", flush=True)
+                # Get song details using the basic item ID
+                song_response = kodi_rpc("AudioLibrary.GetSongDetails", {
+                    "songid": item.get("id"),
+                    "properties": ["title", "album", "artist", "duration", "rating", "year", "genre", "fanart", "thumbnail", "albumid", "artistid", "bitrate", "channels", "samplerate", "bpm", "comment", "lyrics", "mood", "playcount", "track", "disc"]
+                })
+                if song_response and song_response.get("result"):
+                    song_details = song_response["result"].get("songdetails", {})
+                    details.update(song_details)
+                    print(f"[DEBUG] Enhanced song details loaded", flush=True)
+                
+                # Get album details if we have albumid
+                albumid = song_details.get("albumid")
+                if albumid:
+                    try:
+                        update(30, "Loading album metadata")
+                        album_response = kodi_rpc("AudioLibrary.GetAlbumDetails", {
+                            "albumid": albumid,
+                            "properties": ["title", "artist", "year", "rating", "fanart", "thumbnail", "description", "genre", "mood", "style", "theme", "albumduration", "playcount", "albumlabel", "compilation", "totaldiscs"]
+                        })
+                        if album_response and album_response.get("result"):
+                            album_details = album_response["result"].get("albumdetails", {})
+                            details["album"] = album_details
+                            print(f"[DEBUG] Enhanced album details loaded", flush=True)
+                    except Exception as e:
+                        print(f"[WARNING] Failed to get album details: {e}", flush=True)
+                
+                # Get artist details if we have artistid
+                artistid = song_details.get("artistid")
+                if artistid:
+                    # Handle artistid as array (take first one) or single value
+                    print(f"[DEBUG] Original artistid: {artistid}, type: {type(artistid)}", flush=True)
+                    if isinstance(artistid, list) and len(artistid) > 0:
+                        artistid = artistid[0]
+                        print(f"[DEBUG] Converted artistid to: {artistid}, type: {type(artistid)}", flush=True)
+                    try:
+                        update(34, "Loading artist metadata")
+                        artist_response = kodi_rpc("AudioLibrary.GetArtistDetails", {
+                            "artistid": artistid,
+                            "properties": ["fanart", "thumbnail", "description", "born", "formed", "died", "disbanded", "genre", "mood", "style", "yearsactive"]
+                        })
+                        if artist_response and artist_response.get("result"):
+                            artist_details = artist_response["result"].get("artistdetails", {})
+                            details["artist"] = artist_details
+                            print(f"[DEBUG] Enhanced artist details loaded", flush=True)
+                    except Exception as e:
+                        print(f"[WARNING] Failed to get artist details: {e}", flush=True)
+                
+                # Ensure basic item data is preserved (but don't overwrite detailed album/artist objects)
+                details.update({
+                    "title": item.get("title", ""),
+                    "year": item.get("year", "")
+                })
+                
+            except Exception as e:
+                print(f"[WARNING] Failed to get enhanced song details: {e}", flush=True)
+                print(f"[DEBUG] Using basic item data for {playback_type}", flush=True)
+        else:
+            print(f"[DEBUG] Using basic item data for {playback_type}", flush=True)
+
+
+        # Playback progress
+        update(40, "Loading playback")
+        progress_response = kodi_rpc("Player.GetProperties", {
+            "playerid": player_id,
+            "properties": ["time", "totaltime", "speed"]
+        })
+        progress = progress_response.get("result") if progress_response else {}
+        t = progress.get("time", {})
+        d = progress.get("totaltime", {})
+        speed = progress.get("speed", 0)
+        def to_secs(t): return t.get("hours", 0) * 3600 + t.get("minutes", 0) * 60 + t.get("seconds", 0)
+        elapsed = to_secs(t)
+        duration = to_secs(d)
+        percent = int((elapsed / duration) * 100) if duration else 0
+        paused = speed == 0
+
+        session_id = uuid.uuid4().hex
+        
+        # Try to download artwork, but don't fail if this breaks
+        try:
+            update(50, "Loading posters")
+            def art_progress(current, total, label):
+                if total <= 0:
+                    return
+                progress = 50 + int((current / total) * 32)
+                update(progress, label)
+            downloaded_art = prepare_and_download_art(item, session_id, progress_cb=art_progress)
+        except Exception as e:
+            print(f"[WARNING] Artwork download failed, continuing without artwork: {e}", flush=True)
+            downloaded_art = {}  # Empty artwork - page will still work
+
+        # Prepare progress data
+        update(85, "Rendering")
+        progress_data = {
+            "elapsed": elapsed,
+            "duration": duration,
+            "paused": paused
+        }
+
+        # Check if media type is unknown - if so, show fallback message
+        from parser import infer_playback_type
+        playback_type_from_parser = infer_playback_type(item)
+        if playback_type_from_parser == "unknown":
+            print(f"[INFO] Unknown media type detected, showing fallback message", flush=True)
+            update(100, "Done")
+            return render_template_string("""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Unknown Media Type</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        background: linear-gradient(to bottom right, #222, #444);
+                        color: white;
+                        margin: 0;
+                        padding: 0;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                    }
+                    .message-box {
+                        background: rgba(0,0,0,0.6);
+                        padding: 40px;
+                        border-radius: 12px;
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+                        font-size: 1.5em;
+                        text-align: center;
+                        max-width: 600px;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="message-box">
+                    Unknown media type/Media not properly scraped to library.<br>
+                    Please scrape and replay media again
+                </div>
+            </body>
+            </html>
+            """)
+
+        # Use the modular system to generate HTML
+        html = route_media_display(item, session_id, downloaded_art, progress_data, details)
+        update(100, "Done")
+        return render_template_string(html)
+    except Exception as e:
+        print(f"[ERROR] Critical failure in now_playing route: {e}", flush=True)
+        update(100, "Error")
+        return render_template_string(index())
+
+def update_job(job_id: str, progress: int, message: str = None, status: str = "running"):
+    with load_lock:
+        job = load_jobs.get(job_id)
+        if not job:
+            return
+        job["progress"] = min(100, max(0, int(progress)))
+        if message is not None:
+            job["message"] = message
+        job["status"] = status
+        job["updated_at"] = time.time()
+
+def run_nowplaying_job(job_id: str):
+    try:
+        def progress_cb(progress, message):
+            update_job(job_id, progress, message)
+        with load_lock:
+            job = load_jobs.get(job_id)
+            server_id = job.get("server_id") if job else None
+        if server_id is not None:
+            active_server_override.server_id = server_id
+        try:
+            with app.app_context():
+                html = build_nowplaying_html(progress_cb)
+                with load_lock:
+                    job = load_jobs.get(job_id)
+                    if job is not None:
+                        job["html"] = html
+                update_job(job_id, 100, "Done", status="done")
+        finally:
+            if hasattr(active_server_override, "server_id"):
+                del active_server_override.server_id
+    except Exception as e:
+        update_job(job_id, 100, f"Error: {str(e)}", status="error")
+
+@app.route("/start-nowplaying-load")
+def start_nowplaying_load():
+    job_id = uuid.uuid4().hex
+    server_id = session.get('active_server_id', 1) if has_request_context() else 1
+    with load_lock:
+        load_jobs[job_id] = {
+            "status": "pending",
+            "progress": 0,
+            "message": "Starting",
+            "created_at": time.time(),
+            "updated_at": time.time(),
+            "html": None,
+            "server_id": server_id
+        }
+    thread = threading.Thread(target=run_nowplaying_job, args=(job_id,), daemon=True)
+    thread.start()
+    return jsonify({"job_id": job_id})
+
+@app.route("/nowplaying-load-status/<job_id>")
+def nowplaying_load_status(job_id):
+    with load_lock:
+        job = load_jobs.get(job_id)
+        if not job:
+            return jsonify({"status": "missing", "progress": 0, "message": "Not found"}), 404
+        return jsonify({
+            "status": job["status"],
+            "progress": job["progress"],
+            "message": job.get("message", "")
+        })
+
+@app.route("/nowplaying-content/<job_id>")
+def nowplaying_content(job_id):
+    if job_id == "fallback":
+        return "<h1>Loading failed. Please refresh.</h1>", 503
+    with load_lock:
+        job = load_jobs.get(job_id)
+        if not job:
+            return "<h1>Loading job not found.</h1>", 404
+        if job["status"] != "done" or not job.get("html"):
+            return "<h1>Still loading...</h1>", 202
+        html_content = job["html"]
+    return html_content
 
 @app.route("/loading")
 def loading():
@@ -2017,6 +2427,30 @@ def loading():
             .loader > span:nth-child(7) {
                 animation-delay: 1.8s;
             }
+            
+            .loading-bar {
+                width: 320px;
+                height: 10px;
+                background: rgba(255, 255, 255, 0.18);
+                border-radius: 999px;
+                overflow: hidden;
+                margin: 33px auto 0;
+            }
+            
+            .loading-progress {
+                height: 100%;
+                width: 0%;
+                background: linear-gradient(90deg, #4caf50, #7dd3fc);
+                transition: width 0.2s ease;
+            }
+            
+            .loading-text {
+                margin-top: 10px;
+                font-size: 0.9em;
+                color: rgba(255, 255, 255, 0.8);
+                letter-spacing: 0.5px;
+                text-align: center;
+            }
         </style>
     </head>
     <body>
@@ -2028,38 +2462,75 @@ def loading():
             <span>I</span>
             <span>N</span>
             <span>G</span>
+            <div class="loading-bar">
+                <div id="loading-progress" class="loading-progress"></div>
+            </div>
+            <div id="loading-text" class="loading-text">Loading 0%</div>
         </div>
         <script>
-            // Fetch the nowplaying content and replace this page
-            function fetchNowplayingContent() {
-                fetch('/nowplaying')
+            const bar = document.getElementById('loading-progress');
+            const text = document.getElementById('loading-text');
+            let jobId = null;
+            let pollTimer = null;
+
+            function setProgress(percent, label) {
+                const clamped = Math.min(100, Math.max(0, Math.round(percent)));
+                if (bar) {
+                    bar.style.width = clamped + '%';
+                }
+                if (text) {
+                    text.textContent = (label ? label + ' ' : 'Loading ') + clamped + '%';
+                }
+            }
+
+            function pollStatus() {
+                if (!jobId) return;
+                fetch('/nowplaying-load-status/' + jobId)
+                    .then(response => response.json())
+                    .then(data => {
+                        setProgress(data.progress || 0, data.message || 'Loading');
+                        if (data.status === 'done') {
+                            clearInterval(pollTimer);
+                            fetch('/nowplaying-content/' + jobId)
+                                .then(response => response.text())
+                                .then(html => {
+                                    document.body.style.opacity = '0';
+                                    document.body.style.transition = 'opacity 0.5s ease';
+                                    setTimeout(() => {
+                                        document.open();
+                                        document.write(html);
+                                        document.close();
+                                    }, 500);
+                                });
+                        } else if (data.status === 'error') {
+                            clearInterval(pollTimer);
+                            text.textContent = data.message || 'Error loading';
+                        }
+                    })
+                    .catch(() => {
+                        // keep polling in case of transient errors
+                    });
+            }
+
+            function startLoad() {
+                fetch('/start-nowplaying-load')
                     .then(response => {
                         if (!response.ok) {
-                            throw new Error(`HTTP ${response.status}`);
+                            throw new Error('HTTP ' + response.status);
                         }
-                        return response.text();
+                        return response.json();
                     })
-                    .then(html => {
-                        // Fade out loading screen
-                        document.body.style.opacity = '0';
-                        document.body.style.transition = 'opacity 0.5s ease';
-                        
-                        setTimeout(() => {
-                            // Replace the entire document
-                            document.open();
-                            document.write(html);
-                            document.close();
-                        }, 500);
+                    .then(data => {
+                        jobId = data.job_id;
+                        pollTimer = setInterval(pollStatus, 400);
+                        pollStatus();
                     })
-                    .catch(error => {
-                        console.error('Failed to fetch nowplaying content:', error);
-                        // Fallback to full page reload
+                    .catch(() => {
                         window.location.href = '/nowplaying';
                     });
             }
-            
-            // Start fetching after a short delay to ensure loading screen is visible
-            setTimeout(fetchNowplayingContent, 500);
+
+            setTimeout(startLoad, 100);
         </script>
     </body>
     </html>
@@ -2087,234 +2558,7 @@ def now_playing():
             "duration": to_secs(d),
             "paused": speed == 0
         })
-
-    # Get active players - this is critical, so if it fails, show error
-    try:
-        active_response = kodi_rpc("Player.GetActivePlayers")
-        active = active_response.get("result") if active_response else None
-        if not active:
-            return render_template_string(index())
-
-        player_id = active[0]["playerid"]
-        
-        # Get current item - this is critical, so if it fails, show error
-        try:
-            item_response = kodi_rpc("Player.GetItem", {
-                "playerid": player_id,
-                "properties": [
-                    "title", "album", "artist", "season", "episode", "showtitle",
-                        "tvshowid", "duration", "file", "director", "art", "plot", 
-                        "cast", "resume", "genre", "rating", "streamdetails", "year"
-                ]
-            })
-            result = item_response.get("result", {})
-            item = result.get("item", {})
-        except Exception as e:
-            print(f"[ERROR] Failed to get current item: {e}", flush=True)
-            raise e  # This is critical, so re-raise
-        
-        # Get item type to know which API call to make
-        playback_type = item.get("type", "unknown")
-        
-        # Initialize details with basic fallback structure
-        details = {
-            "album": {"title": item.get("album", ""), "year": item.get("year", "")},
-            "artist": {"label": ", ".join(item.get("artist", [])) if item.get("artist") else "Unknown Artist"}
-        }
-        
-        # Get enhanced details for episodes, movies, and songs
-        print(f"[DEBUG] Playback type detected: {playback_type}", flush=True)
-        print(f"[DEBUG] Available IDs - songid: {item.get('songid')}, albumid: {item.get('albumid')}, artistid: {item.get('artistid')}", flush=True)
-        if playback_type == "episode":
-            try:
-                print(f"[DEBUG] Getting enhanced details for episode", flush=True)
-                episode_response = kodi_rpc("VideoLibrary.GetEpisodeDetails", {
-                    "episodeid": item.get("id"),
-                "properties": ["streamdetails", "genre", "director", "cast", "uniqueid", "rating", "studio"]
-            })
-                if episode_response and episode_response.get("result"):
-                    episode_details = episode_response["result"].get("episodedetails", {})
-                    # Merge enhanced details with basic item data
-                    details.update(episode_details)
-                    # Ensure basic item data is preserved
-                    details.update({
-                        "title": item.get("title", ""),
-                        "plot": item.get("plot", ""),
-                        "season": item.get("season", 0),
-                        "episode": item.get("episode", 0),
-                        "showtitle": item.get("showtitle", ""),
-                        "director": item.get("director", []),
-                        "cast": item.get("cast", []),
-                        "year": item.get("year", "")
-                    })
-                    print(f"[DEBUG] Enhanced episode details loaded", flush=True)
-            except Exception as e:
-                print(f"[WARNING] Failed to get enhanced episode details: {e}", flush=True)
-                print(f"[DEBUG] Using basic item data for {playback_type}", flush=True)
-        elif playback_type == "movie":
-            try:
-                print(f"[DEBUG] Getting enhanced details for movie", flush=True)
-                movie_response = kodi_rpc("VideoLibrary.GetMovieDetails", {
-                    "movieid": item.get("id"),
-                "properties": ["streamdetails", "genre", "director", "cast", "uniqueid", "rating", "studio", "tagline"]
-            })
-                if movie_response and movie_response.get("result"):
-                    movie_details = movie_response["result"].get("moviedetails", {})
-                    # Merge enhanced details with basic item data
-                    details.update(movie_details)
-                    # Ensure basic item data is preserved
-                    details.update({
-                        "title": item.get("title", ""),
-                        "plot": item.get("plot", ""),
-                        "director": item.get("director", []),
-                        "cast": item.get("cast", []),
-                        "year": item.get("year", "")
-                    })
-                    print(f"[DEBUG] Enhanced movie details loaded", flush=True)
-            except Exception as e:
-                print(f"[WARNING] Failed to get enhanced movie details: {e}", flush=True)
-                print(f"[DEBUG] Using basic item data for {playback_type}", flush=True)
-        elif playback_type == "song":
-            try:
-                print(f"[DEBUG] Getting enhanced details for song", flush=True)
-                print(f"[DEBUG] Basic item ID: {item.get('id')}", flush=True)
-                # Get song details using the basic item ID
-                song_response = kodi_rpc("AudioLibrary.GetSongDetails", {
-                    "songid": item.get("id"),
-                    "properties": ["title", "album", "artist", "duration", "rating", "year", "genre", "fanart", "thumbnail", "albumid", "artistid", "bitrate", "channels", "samplerate", "bpm", "comment", "lyrics", "mood", "playcount", "track", "disc"]
-                })
-                if song_response and song_response.get("result"):
-                    song_details = song_response["result"].get("songdetails", {})
-                    details.update(song_details)
-                    print(f"[DEBUG] Enhanced song details loaded", flush=True)
-                
-                # Get album details if we have albumid
-                albumid = song_details.get("albumid")
-                if albumid:
-                    try:
-                        album_response = kodi_rpc("AudioLibrary.GetAlbumDetails", {
-                            "albumid": albumid,
-                            "properties": ["title", "artist", "year", "rating", "fanart", "thumbnail", "description", "genre", "mood", "style", "theme", "albumduration", "playcount", "albumlabel", "compilation", "totaldiscs"]
-                        })
-                        if album_response and album_response.get("result"):
-                            album_details = album_response["result"].get("albumdetails", {})
-                            details["album"] = album_details
-                            print(f"[DEBUG] Enhanced album details loaded", flush=True)
-                    except Exception as e:
-                        print(f"[WARNING] Failed to get album details: {e}", flush=True)
-                
-                # Get artist details if we have artistid
-                artistid = song_details.get("artistid")
-                if artistid:
-                    # Handle artistid as array (take first one) or single value
-                    print(f"[DEBUG] Original artistid: {artistid}, type: {type(artistid)}", flush=True)
-                    if isinstance(artistid, list) and len(artistid) > 0:
-                        artistid = artistid[0]
-                        print(f"[DEBUG] Converted artistid to: {artistid}, type: {type(artistid)}", flush=True)
-                    try:
-                        artist_response = kodi_rpc("AudioLibrary.GetArtistDetails", {
-                            "artistid": artistid,
-                            "properties": ["fanart", "thumbnail", "description", "born", "formed", "died", "disbanded", "genre", "mood", "style", "yearsactive"]
-                        })
-                        if artist_response and artist_response.get("result"):
-                            artist_details = artist_response["result"].get("artistdetails", {})
-                            details["artist"] = artist_details
-                            print(f"[DEBUG] Enhanced artist details loaded", flush=True)
-                    except Exception as e:
-                        print(f"[WARNING] Failed to get artist details: {e}", flush=True)
-                
-                # Ensure basic item data is preserved (but don't overwrite detailed album/artist objects)
-                details.update({
-                    "title": item.get("title", ""),
-                    "year": item.get("year", "")
-                })
-                
-            except Exception as e:
-                print(f"[WARNING] Failed to get enhanced song details: {e}", flush=True)
-                print(f"[DEBUG] Using basic item data for {playback_type}", flush=True)
-        else:
-            print(f"[DEBUG] Using basic item data for {playback_type}", flush=True)
-
-
-        # Playback progress
-        progress_response = kodi_rpc("Player.GetProperties", {
-            "playerid": player_id,
-            "properties": ["time", "totaltime", "speed"]
-        })
-        progress = progress_response.get("result") if progress_response else {}
-        t = progress.get("time", {})
-        d = progress.get("totaltime", {})
-        speed = progress.get("speed", 0)
-        def to_secs(t): return t.get("hours", 0) * 3600 + t.get("minutes", 0) * 60 + t.get("seconds", 0)
-        elapsed = to_secs(t)
-        duration = to_secs(d)
-        percent = int((elapsed / duration) * 100) if duration else 0
-        paused = speed == 0
-
-        session_id = uuid.uuid4().hex
-        
-        # Try to download artwork, but don't fail if this breaks
-        try:
-            downloaded_art = prepare_and_download_art(item, session_id)
-        except Exception as e:
-            print(f"[WARNING] Artwork download failed, continuing without artwork: {e}", flush=True)
-            downloaded_art = {}  # Empty artwork - page will still work
-
-        # Prepare progress data
-        progress_data = {
-            "elapsed": elapsed,
-            "duration": duration,
-            "paused": paused
-        }
-
-        # Check if media type is unknown - if so, show fallback message
-        from parser import infer_playback_type
-        playback_type_from_parser = infer_playback_type(item)
-        if playback_type_from_parser == "unknown":
-            print(f"[INFO] Unknown media type detected, showing fallback message", flush=True)
-            return render_template_string("""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Unknown Media Type</title>
-                <style>
-                    body {
-                        font-family: Arial, sans-serif;
-                        background: linear-gradient(to bottom right, #222, #444);
-                        color: white;
-                        margin: 0;
-                        padding: 0;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                    }
-                    .message-box {
-                        background: rgba(0,0,0,0.6);
-                        padding: 40px;
-                        border-radius: 12px;
-                        box-shadow: 0 4px 20px rgba(0,0,0,0.8);
-                        font-size: 1.5em;
-                        text-align: center;
-                        max-width: 600px;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="message-box">
-                    Unknown media type/Media not properly scraped to library.<br>
-                    Please scrape and replay media again
-                </div>
-            </body>
-            </html>
-            """)
-
-        # Use the modular system to generate HTML
-        html = route_media_display(item, session_id, downloaded_art, progress_data, details)
-        return render_template_string(html)
-    except Exception as e:
-        print(f"[ERROR] Critical failure in now_playing route: {e}", flush=True)
-        return render_template_string(index())
+    return build_nowplaying_html()
 
 def generate_fallback_html(item, progress_data):
     """Generate basic HTML when the modular system fails"""

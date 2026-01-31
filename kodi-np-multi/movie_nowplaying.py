@@ -1330,6 +1330,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         let duration = {duration};
         let paused = {str(paused).lower()};
         let lastPlaybackState = null;
+        let noPlayCount = 0;
         
         // Side Panel Functions - Define at top to ensure availability
         function toggleSidePanel() {{
@@ -1669,8 +1670,20 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
               const currentPaused = data.paused;
               const currentAudioLang = data.current_audio_lang || '';
               const currentSubtitleLang = data.current_subtitle_lang || '';
+              const isError = data.error === true;
               
               console.log(`[DEBUG] Poll result: playing=${{currentState}}, item_id=${{currentItemId}}, lastItemId=${{lastItemId}}, paused=${{currentPaused}}, audio=${{currentAudioLang}}, subtitle=${{currentSubtitleLang}}`);
+
+              if (isError) {{
+                console.log('[DEBUG] Poll playback error flagged, skipping state changes');
+                return;
+              }}
+
+              if (currentState) {{
+                noPlayCount = 0;
+              }} else {{
+                noPlayCount += 1;
+              }}
               
               // Update playback button based on pause state
               if (currentPaused !== lastPausedState) {{
@@ -1709,7 +1722,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
               }} else if (currentState !== lastPlaybackState) {{
                 // Only redirect if playback stops (true -> false), not when it starts (false -> true)
                 // When it starts, we're already on the nowplaying page
-                if (lastPlaybackState === true && currentState === false) {{
+                if (lastPlaybackState === true && currentState === false && noPlayCount >= 2) {{
                   document.body.classList.add('fade-out');
                   setTimeout(() => {{
                     window.location.href = '/'; // Redirect to root when playback stops
