@@ -1353,6 +1353,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         let paused = {str(paused).lower()};
         let lastPlaybackState = null;
         let noPlayCount = 0;
+        let redirectingToIdle = false;
         
         // Function to attach expandable functionality to a badge
         function attachExpandableHandler(badge) {{
@@ -1759,7 +1760,9 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
               return res.json();
             }})
             .then(data => {{
-              const currentState = data.playing;
+              const isPlaying = data.playing === true;
+              const isNotPlaying = data.playing === false;
+              const currentState = isPlaying;
               const currentItemId = data.item_id;
               const currentPaused = data.paused;
               const currentAudioLang = data.current_audio_lang || '';
@@ -1773,10 +1776,25 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
                 return;
               }}
 
-              if (currentState) {{
+              if (!isPlaying && !isNotPlaying) {{
+                return;
+              }}
+
+              if (isPlaying) {{
                 noPlayCount = 0;
+                redirectingToIdle = false;
               }} else {{
                 noPlayCount += 1;
+              }}
+
+              if (isNotPlaying && noPlayCount >= 2 && !redirectingToIdle) {{
+                redirectingToIdle = true;
+                console.log('[DEBUG] Redirecting to idle after debounce');
+                document.body.classList.add('fade-out');
+                setTimeout(() => {{
+                  window.location.href = '/'; // Redirect to root when playback stops
+                }}, 1500);
+                return;
               }}
               
               // Update playback button based on pause state
@@ -1810,12 +1828,6 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
               }} else if (currentState !== lastPlaybackState) {{
                 // Only redirect if playback stops (true -> false), not when it starts (false -> true)
                 // When it starts, we're already on the nowplaying page
-                if (lastPlaybackState === true && currentState === false && noPlayCount >= 2) {{
-                  document.body.classList.add('fade-out');
-                  setTimeout(() => {{
-                    window.location.href = '/'; // Redirect to root when playback stops
-                  }}, 1500);
-                }}
                 lastPlaybackState = currentState;
               }}
               // Check for item change (new track/episode while playing)
