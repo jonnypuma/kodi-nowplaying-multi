@@ -184,6 +184,50 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     album_details = details.get("album", {}) if isinstance(details, dict) else {}
     total_discs = album_details.get("totaldiscs", 1)
     
+    def format_hdr_label(value: str) -> str:
+        raw = (value or "").strip()
+        if not raw:
+            return "SDR"
+        key = raw.replace(" ", "").replace("_", "").upper()
+        mapping = {
+            "DOLBYVISION": "Dolby Vision",
+            "HDR10PLUS": "HDR10+",
+            "HDR10": "HDR10",
+            "HLG": "HLG",
+            "SDR": "SDR"
+        }
+        if key in mapping:
+            return mapping[key]
+        return raw.replace("_", " ").title().replace("Hdr", "HDR").replace("Sdr", "SDR").replace("Hlg", "HLG")
+
+    def format_audio_codec(value: str) -> str:
+        raw = (value or "").strip()
+        if not raw:
+            return "Unknown"
+        key = raw.replace(" ", "").replace("_", "").upper()
+        mapping = {
+            "TRUEHDATMOS": "TrueHD Atmos",
+            "TRUEHD": "TrueHD",
+            "DTSHDMA": "DTS-HD MA",
+            "DTSHD": "DTS-HD",
+            "DTSX": "DTS:X",
+            "DTS": "DTS",
+            "EAC3": "E-AC3",
+            "AC3": "AC3",
+            "AAC": "AAC",
+            "FLAC": "FLAC",
+            "PCM": "PCM",
+            "LPCM": "LPCM",
+            "OPUS": "Opus",
+            "VORBIS": "Vorbis",
+            "MP3": "MP3",
+            "WMA": "WMA",
+            "ALAC": "ALAC"
+        }
+        if key in mapping:
+            return mapping[key]
+        return raw.replace("_", " ").title()
+
     # Create music badge components
     # Only show disc badge if album has 2 or more discs
     disc_badge = f"Disc {song_disc}" if song_disc > 0 and total_discs >= 2 else ""
@@ -240,7 +284,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     subtitle_info = streamdetails.get("subtitle", []) if isinstance(streamdetails.get("subtitle"), list) else []
     
     # HDR type (usually not applicable for music, but keeping for consistency)
-    hdr_type = video_info.get("hdrtype", "").upper() or "SDR"
+    hdr_type = format_hdr_label(video_info.get("hdrtype", ""))
     
     # Get enhanced audio information using XBMC.GetInfoLabels for real-time data
     enhanced_audio_info = {}
@@ -305,7 +349,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     resolution = "Audio"  # Music doesn't have video resolution
     
     # Enhanced audio codec information using real-time data
-    audio_codec = enhanced_audio_info.get("VideoPlayer.AudioCodec", audio_info[0].get("codec", "Unknown") if audio_info else "Unknown").upper()
+    audio_codec = format_audio_codec(enhanced_audio_info.get("VideoPlayer.AudioCodec", audio_info[0].get("codec", "Unknown") if audio_info else "Unknown"))
     channels = audio_info[0].get("channels", 0) if audio_info else 0
     
     # Get audio bits per sample from enhanced audio info
@@ -1754,7 +1798,8 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
                 overlayPreference: prefs.overlayPreference || localStorage.getItem('overlayPreference') || 'enabled',
                 overlayOpacity: prefs.overlayOpacity || localStorage.getItem('overlayOpacity') || '85',
                 marqueeInterval: prefs.marqueeInterval || localStorage.getItem('marqueeInterval') || '10',
-                fanartInterval: prefs.fanartInterval || localStorage.getItem('fanartInterval') || '20'
+                fanartInterval: prefs.fanartInterval || localStorage.getItem('fanartInterval') || '20',
+                _server: prefs
               }};
             }}
           }} catch (error) {{
@@ -1926,6 +1971,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
           
           // Load preferences from server (with localStorage fallback)
           const prefs = await loadPreferences();
+          const serverPrefs = prefs._server || {{}};
           const savedBlurPreference = prefs.blurPreference;
           const savedOverlayPreference = prefs.overlayPreference;
           const savedBlurAmount = prefs.blurAmount;
@@ -1950,6 +1996,14 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
           if (document.getElementById('blurSlider')) {{
             document.getElementById('blurSlider').value = savedBlurAmount;
             document.getElementById('blurValue').textContent = savedBlurAmount + '%';
+          }}
+
+          // Sync blur prefs to server if missing there
+          if (!Object.prototype.hasOwnProperty.call(serverPrefs, 'blurPreference')) {{
+            savePreference('blurPreference', savedBlurPreference);
+          }}
+          if (!Object.prototype.hasOwnProperty.call(serverPrefs, 'blurAmount')) {{
+            savePreference('blurAmount', savedBlurAmount);
           }}
           
           // Initialize overlay toggle

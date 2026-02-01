@@ -60,6 +60,50 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     rating = round(details.get("rating", 0.0), 1)
     rating_html = f"<strong>⭐ {rating}</strong>" if rating > 0 else ""
     
+    def format_hdr_label(value: str) -> str:
+        raw = (value or "").strip()
+        if not raw:
+            return "SDR"
+        key = raw.replace(" ", "").replace("_", "").upper()
+        mapping = {
+            "DOLBYVISION": "Dolby Vision",
+            "HDR10PLUS": "HDR10+",
+            "HDR10": "HDR10",
+            "HLG": "HLG",
+            "SDR": "SDR"
+        }
+        if key in mapping:
+            return mapping[key]
+        return raw.replace("_", " ").title().replace("Hdr", "HDR").replace("Sdr", "SDR").replace("Hlg", "HLG")
+
+    def format_audio_codec(value: str) -> str:
+        raw = (value or "").strip()
+        if not raw:
+            return "Unknown"
+        key = raw.replace(" ", "").replace("_", "").upper()
+        mapping = {
+            "TRUEHDATMOS": "TrueHD Atmos",
+            "TRUEHD": "TrueHD",
+            "DTSHDMA": "DTS-HD MA",
+            "DTSHD": "DTS-HD",
+            "DTSX": "DTS:X",
+            "DTS": "DTS",
+            "EAC3": "E-AC3",
+            "AC3": "AC3",
+            "AAC": "AAC",
+            "FLAC": "FLAC",
+            "PCM": "PCM",
+            "LPCM": "LPCM",
+            "OPUS": "Opus",
+            "VORBIS": "Vorbis",
+            "MP3": "MP3",
+            "WMA": "WMA",
+            "ALAC": "ALAC"
+        }
+        if key in mapping:
+            return mapping[key]
+        return raw.replace("_", " ").title()
+
     # Initialize defaults
     director_names = "N/A"
     cast_names = "N/A"
@@ -84,7 +128,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     subtitle_info = streamdetails.get("subtitle", []) if isinstance(streamdetails.get("subtitle"), list) else []
     
     # HDR type
-    hdr_type = video_info.get("hdrtype", "").upper() or "SDR"
+    hdr_type = format_hdr_label(video_info.get("hdrtype", ""))
     
     # Get enhanced video information using XBMC.GetInfoLabels for real-time data
     enhanced_video_info = {}
@@ -318,7 +362,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     
     # Enhanced codec information using real-time data
     video_codec = enhanced_video_info.get("VideoPlayer.VideoCodec", video_info.get("codec", "Unknown")).upper()
-    audio_codec = enhanced_video_info.get("VideoPlayer.AudioCodec", audio_info[0].get("codec", "Unknown") if audio_info else "Unknown").upper()
+    audio_codec = format_audio_codec(enhanced_video_info.get("VideoPlayer.AudioCodec", audio_info[0].get("codec", "Unknown") if audio_info else "Unknown"))
     channels = audio_info[0].get("channels", 0) if audio_info else 0
     
     # New enhanced video information
@@ -1958,7 +2002,8 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
                 overlayPreference: prefs.overlayPreference || localStorage.getItem('overlayPreference') || 'enabled',
                 overlayOpacity: prefs.overlayOpacity || localStorage.getItem('overlayOpacity') || '85',
                 marqueeInterval: prefs.marqueeInterval || localStorage.getItem('marqueeInterval') || '10',
-                fanartInterval: prefs.fanartInterval || localStorage.getItem('fanartInterval') || '20'
+                fanartInterval: prefs.fanartInterval || localStorage.getItem('fanartInterval') || '20',
+                _server: prefs
               }};
             }}
           }} catch (error) {{
@@ -2148,6 +2193,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
           
           // Load preferences from server (with localStorage fallback)
           const prefs = await loadPreferences();
+          const serverPrefs = prefs._server || {{}};
           const savedBlurPreference = prefs.blurPreference;
           const savedOverlayPreference = prefs.overlayPreference;
           const savedBlurAmount = prefs.blurAmount;
@@ -2172,6 +2218,14 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
           if (document.getElementById('blurSlider')) {{
             document.getElementById('blurSlider').value = savedBlurAmount;
             document.getElementById('blurValue').textContent = savedBlurAmount + '%';
+          }}
+
+          // Sync blur prefs to server if missing there
+          if (!Object.prototype.hasOwnProperty.call(serverPrefs, 'blurPreference')) {{
+            savePreference('blurPreference', savedBlurPreference);
+          }}
+          if (!Object.prototype.hasOwnProperty.call(serverPrefs, 'blurAmount')) {{
+            savePreference('blurAmount', savedBlurAmount);
           }}
           
           // Initialize overlay toggle
@@ -2444,7 +2498,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
             {f"<span class='badge'>{aspect_ratio}</span>" if aspect_ratio else ""}
             <span class="badge">{video_codec}</span>
             {f"<span class='badge'>{container_format}</span>" if container_format else ""}
-            <span class="badge">{audio_codec} {channels}ch</span>
+            <span class="badge">{audio_codec}{f" ({channels}ch)" if channels else ""}</span>
             <span class="badge">{hdr_type}</span>
             {f"<span class='badge'>{studio_names}</span>" if studio_names else ""}
             <span class="badge {'expandable-language' if len(all_audio_languages) > 1 else ''}" data-current="{current_audio}" data-all="{', '.join(all_audio_languages)}" data-type="audio">
