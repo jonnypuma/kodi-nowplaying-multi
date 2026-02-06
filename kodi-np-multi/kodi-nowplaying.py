@@ -176,6 +176,7 @@ def get_current_server():
 # Preferences storage
 PREFERENCES_DIR = Path("/app/preferences")
 PREFERENCES_FILE = PREFERENCES_DIR / "preferences.json"
+PREFERENCES_LOCK = threading.Lock()
 
 def ensure_preferences_dir():
     """Ensure the preferences directory exists"""
@@ -222,13 +223,16 @@ def save_preferences(prefs):
             print(f"[ERROR] Cannot save preferences - not a dict: {type(prefs)}", flush=True)
             return False
         
-        # Write atomically using a temporary file first
-        temp_file = PREFERENCES_FILE.with_suffix('.tmp')
-        with open(temp_file, 'w') as f:
-            json.dump(prefs, f, indent=2)
-        
-        # Replace the original file atomically
-        temp_file.replace(PREFERENCES_FILE)
+        with PREFERENCES_LOCK:
+            # Write atomically using a unique temporary file first
+            temp_file = PREFERENCES_DIR / f"preferences.{uuid.uuid4().hex}.tmp"
+            with open(temp_file, 'w') as f:
+                json.dump(prefs, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            
+            # Replace the original file atomically
+            temp_file.replace(PREFERENCES_FILE)
         
         print(f"[DEBUG] Successfully saved preferences to {PREFERENCES_FILE}", flush=True)
         # Verify file was created
@@ -1295,6 +1299,13 @@ def prepare_and_download_art(item, session_id, progress_cb=None):
                             if isinstance(file_info, dict):
                                 file_path = file_info.get("file", "")
                                 file_type = file_info.get("filetype", "")
+
+                                if file_type == "file" and file_path:
+                                    base_name = os.path.basename(file_path).lower()
+                                    if base_name in ("clearlogo.png", "clearlogo.jpg", "clearlogo.jpeg", "clearlogo.webp"):
+                                        if not art_map.get("clearlogo"):
+                                            art_map["clearlogo"] = file_path
+                                            print(f"[DEBUG] Added clearlogo from media dir: {file_path}", flush=True)
                                 
                                 # Check if this is the extrafanart directory
                                 if file_path and file_type == "directory" and "extrafanart" in file_path.lower():
@@ -2094,6 +2105,8 @@ def build_nowplaying_html(progress_cb=None):
             return render_template_string(index())
 
         player_id = active[0]["playerid"]
+        active_server = get_active_server()
+        active_server_id = active_server.get("id") if active_server else None
         
         # Get current item - this is critical, so if it fails, show error
         try:
@@ -2120,6 +2133,8 @@ def build_nowplaying_html(progress_cb=None):
             "album": {"title": item.get("album", ""), "year": item.get("year", "")},
             "artist": {"label": ", ".join(item.get("artist", [])) if item.get("artist") else "Unknown Artist"}
         }
+        if active_server_id is not None:
+            details["active_server_id"] = active_server_id
         
         # Get enhanced details for episodes, movies, and songs
         update(20, "Loading metadata")
@@ -2149,6 +2164,31 @@ def build_nowplaying_html(progress_cb=None):
                         "year": item.get("year", "")
                     })
                     print(f"[DEBUG] Enhanced episode details loaded", flush=True)
+                tvshowid = item.get("tvshowid")
+                if tvshowid:
+                    try:
+                        tvshow_response = kodi_rpc("VideoLibrary.GetTVShowDetails", {
+                            "tvshowid": tvshowid,
+                            "properties": ["studio", "art"]
+                        }, server_id=active_server_id)
+                        if tvshow_response and tvshow_response.get("result"):
+                            tvshow_details = tvshow_response["result"].get("tvshowdetails", {})
+                            tvshow_studio = tvshow_details.get("studio", [])
+                            if isinstance(tvshow_studio, list) and tvshow_studio:
+                                if not details.get("studio"):
+                                    details["studio"] = tvshow_studio
+                            tvshow_art = tvshow_details.get("art", {})
+                            if isinstance(tvshow_art, dict) and tvshow_art:
+                                if not isinstance(item.get("art"), dict):
+                                    item["art"] = {}
+                                for art_key, art_value in tvshow_art.items():
+                                    if not art_value:
+                                        continue
+                                    namespaced_key = f"tvshow.{art_key}"
+                                    if namespaced_key not in item["art"]:
+                                        item["art"][namespaced_key] = art_value
+                    except Exception as e:
+                        print(f"[WARNING] Failed to get tvshow details for episode: {e}", flush=True)
             except Exception as e:
                 print(f"[WARNING] Failed to get enhanced episode details: {e}", flush=True)
                 print(f"[DEBUG] Using basic item data for {playback_type}", flush=True)

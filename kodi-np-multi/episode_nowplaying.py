@@ -71,6 +71,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     # Extract IMDb ID and construct URL - ensure details is a dict
     if not isinstance(details, dict):
         details = {}
+    active_server_id = details.get("active_server_id")
     imdb_id = details.get("uniqueid", {}).get("imdb", "")
     imdb_url = f"https://www.imdb.com/title/{imdb_id}" if imdb_id else ""
     
@@ -165,7 +166,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         
         # Get active player ID
         try:
-            active_players_response = kodi_rpc("Player.GetActivePlayers", {})
+            active_players_response = kodi_rpc("Player.GetActivePlayers", {}, server_id=active_server_id)
             if active_players_response and active_players_response.get("result"):
                 active_players = active_players_response.get("result", [])
                 if active_players:
@@ -190,14 +191,14 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
                 "VideoPlayer.SubtitlesLanguage",
                 "VideoPlayer.Year"
             ]
-        })
+        }, server_id=active_server_id)
         
         # Try to get available audio streams using Player.GetProperties
         try:
             audio_streams_response = kodi_rpc("Player.GetProperties", {
                 "playerid": player_id,
                 "properties": ["audiostreams"]
-            })
+            }, server_id=active_server_id)
             print(f"[DEBUG] Player.GetProperties audiostreams response: {audio_streams_response}", flush=True)
             
             if audio_streams_response and audio_streams_response.get("result"):
@@ -225,7 +226,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
             subtitle_streams_response = kodi_rpc("Player.GetProperties", {
                 "playerid": player_id,
                 "properties": ["subtitles"]
-            })
+            }, server_id=active_server_id)
             print(f"[DEBUG] Player.GetProperties subtitles response: {subtitle_streams_response}", flush=True)
             
             if subtitle_streams_response and subtitle_streams_response.get("result"):
@@ -352,7 +353,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
                 tvshow_response = kodi_rpc("VideoLibrary.GetTVShowDetails", {
                     "tvshowid": tvshowid,
                     "properties": ["studio"]
-                })
+                }, server_id=active_server_id)
                 if tvshow_response and tvshow_response.get("result"):
                     tvshow_details = tvshow_response["result"].get("tvshowdetails", {})
                     tvshow_studio_list = tvshow_details.get("studio", [])
