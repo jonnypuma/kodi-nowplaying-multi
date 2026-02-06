@@ -89,6 +89,9 @@ def get_active_server():
     return None
 
 ART_TYPES = ["poster", "front", "back", "fanart", "clearlogo", "clearart", "discart", "cdart", "banner", "season.poster", "thumbnail"]
+ART_TMP_DIR = "/tmp"
+ART_FILE_PREFIX_LEN = 33  # 32 hex chars + underscore
+ART_CLEANUP_AGE_SECONDS = 6 * 60 * 60
 
 # Global variables to track episode transitions and prevent reload loops
 last_known_episode = None
@@ -1144,6 +1147,31 @@ def prepare_and_download_art(item, session_id, progress_cb=None):
     
     print(f"[DEBUG] Found fanart variants: {list(fanart_variants.keys())}", flush=True)
     print(f"[DEBUG] Total fanart variants found: {len(fanart_variants)}", flush=True)
+
+    prefs = load_preferences()
+    try:
+        min_fanart_kb = int(prefs.get("fanartMinSizeKB", 200))
+    except (TypeError, ValueError):
+        min_fanart_kb = 200
+    min_fanart_kb = max(0, min_fanart_kb)
+    min_fanart_bytes = min_fanart_kb * 1024
+
+    def _is_fanart_key(key: str) -> bool:
+        return key.startswith("fanart") or key.startswith("extrafanart")
+
+    def _fanart_size_ok(local_path: str, art_key: str) -> bool:
+        if not _is_fanart_key(art_key) or min_fanart_bytes <= 0:
+            return True
+        try:
+            size = os.path.getsize(local_path)
+            if size >= min_fanart_bytes:
+                return True
+            os.remove(local_path)
+            print(f"[INFO] Skipping {art_key} - size {size} bytes below {min_fanart_bytes}", flush=True)
+            return False
+        except Exception as size_e:
+            print(f"[DEBUG] Failed size check for {art_key}: {size_e}", flush=True)
+            return True
     
     # For music, try to find common front cover files if Kodi provided audio file instead of image
     def _is_image_path(path: str) -> bool:
@@ -1611,8 +1639,11 @@ def prepare_and_download_art(item, session_id, progress_cb=None):
             r.raise_for_status()
             with open(local_path, "wb") as f:
                 f.write(r.content)
-            downloaded[art_type] = filename
-            print(f"[INFO] Downloaded {art_type} to {local_path}", flush=True)
+            if _fanart_size_ok(local_path, art_type):
+                downloaded[art_type] = filename
+                print(f"[INFO] Downloaded {art_type} to {local_path}", flush=True)
+            else:
+                print(f"[INFO] Fanart {art_type} filtered by size threshold", flush=True)
         except Exception as e:
             print(f"[ERROR] Failed to download {art_type}: {e}", flush=True)
             
@@ -1765,9 +1796,11 @@ def prepare_and_download_art(item, session_id, progress_cb=None):
                                 r.raise_for_status()
                                 with open(local_path, "wb") as f:
                                     f.write(r.content)
-                                downloaded[art_type] = filename
-                                print(f"[INFO] Downloaded {art_type} from fallback path to {local_path}")
-                                break  # Success, stop trying other fallback paths
+                                if _fanart_size_ok(local_path, art_type):
+                                    downloaded[art_type] = filename
+                                    print(f"[INFO] Downloaded {art_type} from fallback path to {local_path}")
+                                    break  # Success, stop trying other fallback paths
+                                print(f"[INFO] Fanart {art_type} filtered by size threshold", flush=True)
                             except Exception as fallback_e:
                                 print(f"[DEBUG] Fallback path failed for {art_type}: {fallback_e}")
                                 pass
@@ -1868,9 +1901,11 @@ def prepare_and_download_art(item, session_id, progress_cb=None):
                                                     r.raise_for_status()
                                                     with open(local_path, "wb") as f:
                                                         f.write(r.content)
-                                                    downloaded[variant_key] = filename_local
-                                                    print(f"[INFO] Downloaded {variant_key} from fallback path to {local_path}", flush=True)
-                                                    break  # Success, exit fallback loop
+                                                    if _fanart_size_ok(local_path, variant_key):
+                                                        downloaded[variant_key] = filename_local
+                                                        print(f"[INFO] Downloaded {variant_key} from fallback path to {local_path}", flush=True)
+                                                        break  # Success, exit fallback loop
+                                                    print(f"[INFO] Fanart {variant_key} filtered by size threshold", flush=True)
                                                 except Exception as e:
                                                     print(f"[DEBUG] Failed to download from fallback path: {e}", flush=True)
                                                     continue
@@ -1913,8 +1948,11 @@ def prepare_and_download_art(item, session_id, progress_cb=None):
                             r.raise_for_status()
                             with open(local_path, "wb") as f:
                                 f.write(r.content)
-                            downloaded[variant_key] = filename
-                            print(f"[INFO] Downloaded {variant_key} to {local_path}", flush=True)
+                            if _fanart_size_ok(local_path, variant_key):
+                                downloaded[variant_key] = filename
+                                print(f"[INFO] Downloaded {variant_key} to {local_path}", flush=True)
+                            else:
+                                print(f"[INFO] Fanart {variant_key} filtered by size threshold", flush=True)
                         except Exception as e:
                             print(f"[ERROR] Failed to download {variant_key}: {e}", flush=True)
                     else:
@@ -1944,8 +1982,11 @@ def prepare_and_download_art(item, session_id, progress_cb=None):
                             r.raise_for_status()
                             with open(local_path, "wb") as f:
                                 f.write(r.content)
-                            downloaded[variant_key] = filename
-                            print(f"[INFO] Downloaded {variant_key} to {local_path}", flush=True)
+                            if _fanart_size_ok(local_path, variant_key):
+                                downloaded[variant_key] = filename
+                                print(f"[INFO] Downloaded {variant_key} to {local_path}", flush=True)
+                            else:
+                                print(f"[INFO] Fanart {variant_key} filtered by size threshold", flush=True)
                         except Exception as e:
                             print(f"[ERROR] Failed to download {variant_key}: {e}", flush=True)
                             
@@ -1960,6 +2001,29 @@ def prepare_and_download_art(item, session_id, progress_cb=None):
     print(f"[DEBUG] Downloaded fanart keys: {[k for k in downloaded.keys() if k.startswith(('fanart', 'extrafanart'))]}", flush=True)
     
     return downloaded
+
+def cleanup_old_artwork_files():
+    try:
+        now_ts = time.time()
+        removed = 0
+        for filename in os.listdir(ART_TMP_DIR):
+            if len(filename) <= ART_FILE_PREFIX_LEN or "_" not in filename:
+                continue
+            prefix = filename.split("_", 1)[0]
+            if len(prefix) != 32 or any(c not in "0123456789abcdef" for c in prefix):
+                continue
+            path = os.path.join(ART_TMP_DIR, filename)
+            try:
+                stat = os.stat(path)
+                if (now_ts - stat.st_mtime) >= ART_CLEANUP_AGE_SECONDS:
+                    os.remove(path)
+                    removed += 1
+            except Exception as file_e:
+                print(f"[DEBUG] Artwork cleanup skipped {path}: {file_e}", flush=True)
+        if removed:
+            print(f"[INFO] Artwork cleanup removed {removed} files", flush=True)
+    except Exception as e:
+        print(f"[DEBUG] Artwork cleanup failed: {e}", flush=True)
 
 @app.route("/media/<filename>")
 def serve_image(filename):
@@ -2193,6 +2257,7 @@ def build_nowplaying_html(progress_cb=None):
         percent = int((elapsed / duration) * 100) if duration else 0
         paused = speed == 0
 
+        cleanup_old_artwork_files()
         session_id = uuid.uuid4().hex
         
         # Try to download artwork, but don't fail if this breaks

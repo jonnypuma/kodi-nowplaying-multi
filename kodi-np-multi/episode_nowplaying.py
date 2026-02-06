@@ -2116,6 +2116,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
                 overlayOpacity: prefs.overlayOpacity || localStorage.getItem('overlayOpacity') || '85',
                 marqueeInterval: prefs.marqueeInterval || localStorage.getItem('marqueeInterval') || '10',
                 fanartInterval: prefs.fanartInterval || localStorage.getItem('fanartInterval') || '20',
+                fanartMinSizeKB: prefs.fanartMinSizeKB || localStorage.getItem('fanartMinSizeKB') || '200',
                 _server: prefs
               }};
             }}
@@ -2129,7 +2130,8 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
             overlayPreference: localStorage.getItem('overlayPreference') || 'enabled',
             overlayOpacity: localStorage.getItem('overlayOpacity') || '85',
             marqueeInterval: localStorage.getItem('marqueeInterval') || '10',
-            fanartInterval: localStorage.getItem('fanartInterval') || '20'
+            fanartInterval: localStorage.getItem('fanartInterval') || '20',
+            fanartMinSizeKB: localStorage.getItem('fanartMinSizeKB') || '200'
           }};
         }}
         
@@ -2283,6 +2285,12 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
           
           savePreference('fanartInterval', intervalValue.toString());
         }}
+
+        function updateFanartMinSize(value) {{
+          const sizeValue = parseInt(value);
+          document.getElementById('fanartMinSizeValue').textContent = sizeValue + 'kB';
+          savePreference('fanartMinSizeKB', sizeValue.toString());
+        }}
         
         async function initializeBlurToggle() {{
           const content = document.querySelector('.content');
@@ -2300,6 +2308,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
           const savedOpacity = prefs.overlayOpacity;
           const savedMarqueeInterval = prefs.marqueeInterval;
           const savedFanartInterval = prefs.fanartInterval;
+          const savedFanartMinSize = prefs.fanartMinSizeKB;
           
           // Initialize blur toggle
           if (savedBlurPreference === 'blurred') {{
@@ -2324,13 +2333,21 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
             document.getElementById('blurValue').textContent = savedBlurAmount + '%';
           }}
 
-          // Sync blur prefs to server if missing there
-          if (!Object.prototype.hasOwnProperty.call(serverPrefs, 'blurPreference')) {{
-            savePreference('blurPreference', savedBlurPreference);
-          }}
-          if (!Object.prototype.hasOwnProperty.call(serverPrefs, 'blurAmount')) {{
-            savePreference('blurAmount', savedBlurAmount);
-          }}
+          // Sync prefs to server if missing there
+          const prefKeys = [
+            ['blurPreference', savedBlurPreference],
+            ['blurAmount', savedBlurAmount],
+            ['overlayPreference', savedOverlayPreference],
+            ['overlayOpacity', savedOpacity],
+            ['marqueeInterval', savedMarqueeInterval],
+            ['fanartInterval', savedFanartInterval],
+            ['fanartMinSizeKB', savedFanartMinSize]
+          ];
+          prefKeys.forEach(([key, value]) => {{
+            if (!Object.prototype.hasOwnProperty.call(serverPrefs, key)) {{
+              savePreference(key, value);
+            }}
+          }});
           
           // Initialize overlay toggle
           if (savedOverlayPreference === 'enabled') {{
@@ -2361,6 +2378,11 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
           if (document.getElementById('fanartIntervalSlider')) {{
             updateFanartInterval(savedFanartInterval);
             document.getElementById('fanartIntervalSlider').value = savedFanartInterval;
+          }}
+
+          if (document.getElementById('fanartMinSizeSlider')) {{
+            updateFanartMinSize(savedFanartMinSize);
+            document.getElementById('fanartMinSizeSlider').value = savedFanartMinSize;
           }}
         }}
         
@@ -2696,6 +2718,11 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
               <label>Fanart slideshow interval: <span class="slider-value" id="fanartIntervalValue">20s</span></label>
               <input type="range" min="5" max="120" value="20" class="slider" id="fanartIntervalSlider" oninput="updateFanartInterval(this.value)">
             </div>
+            <div class="slider-container">
+              <label>Fanart min size: <span class="slider-value" id="fanartMinSizeValue">200kB</span></label>
+              <input type="range" min="0" max="1000" value="200" class="slider" id="fanartMinSizeSlider" oninput="updateFanartMinSize(this.value)">
+            </div>
+            <div class="slider-note">Applies on refresh/new media load.</div>
           </div>
         </div>
       </div>
