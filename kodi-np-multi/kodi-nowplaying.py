@@ -1265,6 +1265,34 @@ def prepare_and_download_art(item, session_id, progress_cb=None):
             else:
                 print(f"[DEBUG] No fallback album cover found for {album_dir}", flush=True)
 
+    def _extract_art_dir(path: str) -> str:
+        if not path:
+            return ""
+        cleaned = path
+        if cleaned.startswith("image://"):
+            cleaned = urllib.parse.unquote(cleaned[len("image://"):])
+        cleaned = cleaned.rstrip("/")
+        return os.path.dirname(cleaned)
+
+    def _resolve_episode_media_dir(art_map: dict, current_file: str) -> str:
+        for key in [
+            "tvshow.clearlogo",
+            "tvshow.logo",
+            "tvshow.banner",
+            "tvshow.poster",
+            "tvshow.fanart",
+            "tvshow.landscape",
+            "tvshow.thumb"
+        ]:
+            candidate = _extract_art_dir(art_map.get(key))
+            if candidate:
+                return candidate
+        episode_dir = os.path.dirname(current_file.rstrip("/"))
+        dir_name = os.path.basename(episode_dir).lower()
+        if dir_name.startswith("season") or re.match(r"^season\s*\d+", dir_name):
+            return os.path.dirname(episode_dir)
+        return episode_dir
+
     # For movies and episodes, try to find additional fanart files in the media folder
     if item.get("type") in ["movie", "episode"] and item.get("file"):
         current_file = item.get("file", "")
@@ -1272,11 +1300,8 @@ def prepare_and_download_art(item, session_id, progress_cb=None):
             try:
                 # For TV episodes, we need to look in the TV show's root directory, not the episode's directory
                 if item.get("type") == "episode":
-                    # Get the TV show's root directory by going up from the episode file
-                    # Episode path: /Show/Season XX/episode.mkv
-                    # We want: /Show/
-                    episode_dir = os.path.dirname(current_file)  # Season XX directory
-                    media_dir = os.path.dirname(episode_dir)     # Show root directory
+                    # Use tvshow art paths when available to avoid scanning the TV root
+                    media_dir = _resolve_episode_media_dir(art_map, current_file)
                     print(f"[DEBUG] TV Episode detected - looking for fanart in show root directory: {media_dir}", flush=True)
                 else:
                     # For movies, use the movie's directory
