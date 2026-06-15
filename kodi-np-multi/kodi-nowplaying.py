@@ -7,17 +7,22 @@ import re
 import json
 import threading
 import time
+from html import escape
 from pathlib import Path
 from parser import route_media_display
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", uuid.uuid4().hex)  # For session management
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
 
 load_jobs = {}
 load_lock = threading.Lock()
 active_server_override = threading.local()
 
 HEADERS = {"Content-Type": "application/json"}
+
+def html_escape(value):
+    return escape(str(value), quote=True) if value is not None else ""
 
 # Parse multiple Kodi servers from environment variables
 def parse_kodi_servers():
@@ -90,8 +95,12 @@ def get_active_server():
 
 ART_TYPES = ["poster", "front", "back", "fanart", "clearlogo", "clearart", "discart", "cdart", "banner", "season.poster", "thumbnail"]
 ART_TMP_DIR = "/tmp"
+ART_TMP_PATH = Path(ART_TMP_DIR).resolve()
+APP_DIR = Path(__file__).resolve().parent
 ART_FILE_PREFIX_LEN = 33  # 32 hex chars + underscore
 ART_CLEANUP_AGE_SECONDS = 6 * 60 * 60
+ARTWORK_FILENAME_RE = re.compile(r"^[0-9a-f]{32}_[A-Za-z0-9_.-]+\.jpg$")
+STATIC_FILENAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 # Global variables to track episode transitions and prevent reload loops
 last_known_episode = None
@@ -177,6 +186,17 @@ def get_current_server():
 PREFERENCES_DIR = Path("/app/preferences")
 PREFERENCES_FILE = PREFERENCES_DIR / "preferences.json"
 PREFERENCES_LOCK = threading.Lock()
+PREFERENCE_ENUMS = {
+    "blurPreference": {"blurred", "non-blurred"},
+    "overlayPreference": {"enabled", "disabled"},
+}
+PREFERENCE_RANGES = {
+    "blurAmount": (0, 100),
+    "overlayOpacity": (0, 100),
+    "marqueeInterval": (5, 60),
+    "fanartInterval": (5, 120),
+    "fanartMinSizeKB": (0, 1000),
+}
 
 def ensure_preferences_dir():
     """Ensure the preferences directory exists"""
@@ -195,7 +215,7 @@ def load_preferences():
         try:
             with open(PREFERENCES_FILE, 'r') as f:
                 prefs = json.load(f)
-                print(f"[DEBUG] Loaded preferences from file: {prefs}", flush=True)
+                print(f"[DEBUG] Loaded preference keys from file: {list(prefs.keys()) if isinstance(prefs, dict) else type(prefs)}", flush=True)
                 # Ensure it's a dict
                 if not isinstance(prefs, dict):
                     print(f"[WARNING] Preferences file contains non-dict data, returning empty dict", flush=True)
@@ -215,7 +235,7 @@ def save_preferences(prefs):
     ensure_preferences_dir()
     try:
         print(f"[DEBUG] Saving preferences to {PREFERENCES_FILE}", flush=True)
-        print(f"[DEBUG] Preferences data to save: {prefs}", flush=True)
+        print(f"[DEBUG] Preference keys to save: {list(prefs.keys()) if isinstance(prefs, dict) else type(prefs)}", flush=True)
         print(f"[DEBUG] Preferences type: {type(prefs)}, Is dict: {isinstance(prefs, dict)}", flush=True)
         
         # Ensure prefs is a dict
@@ -242,7 +262,7 @@ def save_preferences(prefs):
             # Read back to verify
             with open(PREFERENCES_FILE, 'r') as f:
                 verify_prefs = json.load(f)
-                print(f"[DEBUG] Verified saved preferences: {verify_prefs}", flush=True)
+                print(f"[DEBUG] Verified saved preference keys: {list(verify_prefs.keys()) if isinstance(verify_prefs, dict) else type(verify_prefs)}", flush=True)
         else:
             print(f"[ERROR] Preferences file was not created at {PREFERENCES_FILE}", flush=True)
             return False
@@ -252,6 +272,38 @@ def save_preferences(prefs):
         import traceback
         print(f"[ERROR] Traceback: {traceback.format_exc()}", flush=True)
         return False
+
+def validate_preferences_update(data):
+    """Return sanitized preference values or an error message."""
+    if not isinstance(data, dict):
+        return None, "Preferences must be a JSON object"
+
+    sanitized = {}
+    allowed_keys = set(PREFERENCE_ENUMS) | set(PREFERENCE_RANGES)
+    unknown_keys = sorted(set(data) - allowed_keys)
+    if unknown_keys:
+        return None, f"Unsupported preference key(s): {', '.join(unknown_keys)}"
+
+    for key, allowed_values in PREFERENCE_ENUMS.items():
+        if key not in data:
+            continue
+        value = str(data[key])
+        if value not in allowed_values:
+            return None, f"Invalid value for {key}"
+        sanitized[key] = value
+
+    for key, (min_value, max_value) in PREFERENCE_RANGES.items():
+        if key not in data:
+            continue
+        try:
+            value = int(data[key])
+        except (TypeError, ValueError):
+            return None, f"Invalid value for {key}"
+        if value < min_value or value > max_value:
+            return None, f"{key} must be between {min_value} and {max_value}"
+        sanitized[key] = str(value)
+
+    return sanitized, None
 
 def get_persisted_server_id():
     prefs = load_preferences()
@@ -282,7 +334,7 @@ def hydrate_server_session():
 def get_preferences():
     """Get user preferences"""
     prefs = load_preferences()
-    print(f"[DEBUG] GET preferences request, returning: {prefs}", flush=True)
+    print(f"[DEBUG] GET preferences request, returning keys: {list(prefs.keys())}", flush=True)
     return jsonify(prefs)
 
 @app.route("/api/preferences/test", methods=["GET"])
@@ -313,20 +365,24 @@ def set_preferences():
     """Save user preferences"""
     try:
         data = request.get_json()
-        print(f"[DEBUG] Received preferences POST request with data: {data}", flush=True)
+        print(f"[DEBUG] Received preferences POST request with keys: {list(data.keys()) if isinstance(data, dict) else type(data)}", flush=True)
         if not data:
             print("[ERROR] No data provided in preferences POST request", flush=True)
             return jsonify({"success": False, "error": "No data provided"}), 400
+        sanitized, validation_error = validate_preferences_update(data)
+        if validation_error:
+            print(f"[WARNING] Invalid preferences POST request: {validation_error}", flush=True)
+            return jsonify({"success": False, "error": validation_error}), 400
         
         # Load existing preferences and merge with new ones
         prefs = load_preferences()
-        print(f"[DEBUG] Existing preferences before merge: {prefs}", flush=True)
-        print(f"[DEBUG] New data to merge: {data}", flush=True)
+        print(f"[DEBUG] Existing preference keys before merge: {list(prefs.keys())}", flush=True)
+        print(f"[DEBUG] Preference keys to merge: {list(sanitized.keys())}", flush=True)
         
         # Merge new data into existing preferences (update will overwrite existing keys)
-        prefs.update(data)
+        prefs.update(sanitized)
         
-        print(f"[DEBUG] Merged preferences after update: {prefs}", flush=True)
+        print(f"[DEBUG] Merged preference keys after update: {list(prefs.keys())}", flush=True)
         print(f"[DEBUG] Type of prefs: {type(prefs)}, Is dict: {isinstance(prefs, dict)}", flush=True)
         
         # Verify we have a proper dict before saving
@@ -2061,10 +2117,23 @@ def cleanup_old_artwork_files():
     except Exception as e:
         print(f"[DEBUG] Artwork cleanup failed: {e}", flush=True)
 
+def resolve_safe_child(base_dir: Path, filename: str):
+    if not filename or "/" in filename or "\\" in filename:
+        return None
+    try:
+        path = (base_dir / filename).resolve()
+        if not path.is_relative_to(base_dir):
+            return None
+        return path
+    except Exception:
+        return None
+
 @app.route("/media/<filename>")
 def serve_image(filename):
-    path = f"/tmp/{filename}"
-    if os.path.exists(path):
+    if not ARTWORK_FILENAME_RE.fullmatch(filename):
+        return "Invalid image path", 400
+    path = resolve_safe_child(ART_TMP_PATH, filename)
+    if path and path.exists() and path.is_file():
         return send_file(path, mimetype="image/jpeg")
     return "Image not found", 404
 
@@ -2097,7 +2166,12 @@ def pause_button():
 # New route to serve static files like the IMDb icon
 @app.route("/static/<filename>")
 def serve_static(filename):
-    return send_file(os.path.join(os.path.dirname(__file__), filename))
+    if not STATIC_FILENAME_RE.fullmatch(filename):
+        return "Invalid static path", 400
+    path = resolve_safe_child(APP_DIR, filename)
+    if path and path.exists() and path.is_file():
+        return send_file(path)
+    return "Static file not found", 404
 
 # Specific favicon route to ensure it works
 @app.route("/favicon.ico")
@@ -2692,9 +2766,9 @@ def now_playing():
 
 def generate_fallback_html(item, progress_data):
     """Generate basic HTML when the modular system fails"""
-    title = item.get("title", "Unknown Title")
-    artist = ", ".join(item.get("artist", [])) if item.get("artist") else "Unknown Artist"
-    album = item.get("album", "")
+    title = html_escape(item.get("title", "Unknown Title"))
+    artist = html_escape(", ".join(item.get("artist", [])) if item.get("artist") else "Unknown Artist")
+    album = html_escape(item.get("album", ""))
     elapsed = progress_data.get("elapsed", 0)
     duration = progress_data.get("duration", 0)
     paused = progress_data.get("paused", False)

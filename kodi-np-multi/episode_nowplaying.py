@@ -2,6 +2,11 @@
 TV Episode-specific HTML generation for Kodi Now Playing application.
 Handles TV episode display with show poster, season poster, and episode information.
 """
+from html import escape
+
+
+def html_escape(value):
+    return escape(str(value), quote=True) if value is not None else ""
 
 def generate_html(item, session_id, downloaded_art, progress_data, details):
     """
@@ -451,6 +456,29 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     duration = progress_data.get("duration", 0)
     percent = int((elapsed / duration) * 100) if duration else 0
     paused = progress_data.get("paused", False)
+
+    show = html_escape(show)
+    title_badge = html_escape(title_badge)
+    season_badge = html_escape(season_badge)
+    episode_badge = html_escape(episode_badge)
+    plot = html_escape(plot)
+    imdb_url = html_escape(imdb_url)
+    director_names = html_escape(director_names)
+    cast_names = html_escape(cast_names)
+    studio_names = html_escape(studio_names)
+    tagline = html_escape(tagline)
+    release_year = html_escape(release_year)
+    resolution = html_escape(resolution)
+    aspect_ratio = html_escape(aspect_ratio)
+    video_codec = html_escape(video_codec)
+    container_format = html_escape(container_format)
+    audio_codec = html_escape(audio_codec)
+    hdr_type = html_escape(hdr_type)
+    current_audio = html_escape(current_audio)
+    current_subtitle = html_escape(current_subtitle)
+    all_audio_languages = [html_escape(lang) for lang in all_audio_languages]
+    all_subtitle_languages = [html_escape(lang) for lang in all_subtitle_languages]
+    genre_badges = [html_escape(genre) for genre in genre_badges]
     
     # Generate HTML
     html = f"""
@@ -512,7 +540,16 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
           display: flex;
           gap: 40px;
           color: white;
-          text-shadow: 0 2px 6px rgba(0,0,0,0.7), 0 0 8px rgba(0,0,0,0.5);
+          text-shadow:
+            -1px -1px 0 rgba(0,0,0,0.95),
+             0   -1px 0 rgba(0,0,0,0.95),
+             1px -1px 0 rgba(0,0,0,0.95),
+            -1px  0   0 rgba(0,0,0,0.95),
+             1px  0   0 rgba(0,0,0,0.95),
+            -1px  1px 0 rgba(0,0,0,0.95),
+             0    1px 0 rgba(0,0,0,0.95),
+             1px  1px 0 rgba(0,0,0,0.95),
+             0    2px 4px rgba(0,0,0,0.9);
         }}
         .left-section {{
           display: flex;

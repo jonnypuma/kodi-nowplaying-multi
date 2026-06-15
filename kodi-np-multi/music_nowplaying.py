@@ -2,6 +2,11 @@
 Music-specific HTML generation for Kodi Now Playing application.
 Handles music display with album poster, discart/cdart spinning animation, and music-specific layout.
 """
+from html import escape
+
+
+def html_escape(value):
+    return escape(str(value), quote=True) if value is not None else ""
 
 def generate_html(item, session_id, downloaded_art, progress_data, details):
     """
@@ -400,6 +405,22 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     # Debug: Check fanart_variants before HTML generation
     print(f"[DEBUG] Before HTML generation - fanart_variants length: {len(fanart_variants)}", flush=True)
     print(f"[DEBUG] Before HTML generation - fanart_variants content: {fanart_variants}", flush=True)
+
+    artist_names = html_escape(artist_names)
+    album = html_escape(album)
+    album_year = html_escape(album_year)
+    disc_badge = html_escape(disc_badge)
+    track_badge = html_escape(track_badge)
+    title_badge = html_escape(title_badge)
+    audio_codec = html_escape(audio_codec)
+    container_format = html_escape(container_format)
+    record_label = html_escape(record_label)
+    genre_badges = [html_escape(genre) for genre in genre_badges]
+    album_description = html_escape(album_details.get("description", "")) if isinstance(album_details, dict) else ""
+    artist_description = html_escape(artist_details.get("description", "")) if isinstance(artist_details, dict) else ""
+    artist_born = html_escape(artist_born)
+    artist_genre = [html_escape(genre) for genre in artist_genre] if isinstance(artist_genre, list) else ([html_escape(artist_genre)] if artist_genre else [])
+    artist_style = [html_escape(style) for style in artist_style] if isinstance(artist_style, list) else ([html_escape(artist_style)] if artist_style else [])
     
     # Generate HTML
     html = f"""
@@ -458,7 +479,16 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
           backdrop-filter: blur(5px);
           box-shadow: 0 8px 32px rgba(0,0,0,0.8);
           color: white;
-          text-shadow: 0 2px 6px rgba(0,0,0,0.7), 0 0 8px rgba(0,0,0,0.5);
+          text-shadow:
+            -1px -1px 0 rgba(0,0,0,0.95),
+             0   -1px 0 rgba(0,0,0,0.95),
+             1px -1px 0 rgba(0,0,0,0.95),
+            -1px  0   0 rgba(0,0,0,0.95),
+             1px  0   0 rgba(0,0,0,0.95),
+            -1px  1px 0 rgba(0,0,0,0.95),
+             0    1px 0 rgba(0,0,0,0.95),
+             1px  1px 0 rgba(0,0,0,0.95),
+             0    2px 4px rgba(0,0,0,0.9);
         }}
         .three-column-layout {{
           display: flex;
@@ -2509,8 +2539,8 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
           
           <!-- Right Column: Artist Bio and Album Description -->
           <div class="column-right">
-            {f"<div class='album-description'><div class='music-badges'><span class='music-badge'>Album Description</span></div><p>{album_details.get('description', '')}</p></div>" if isinstance(album_details, dict) and album_details.get('description') else f"<!-- No album description: album_details={album_details}, type={type(album_details)} -->"}
-            {f"<div class='album-description'><div class='music-badges'><span class='music-badge'>Artist Biography</span></div>" + (f"<p><strong>Born:</strong> {artist_born}</p>" if artist_born else "") + (f"<p><strong>Genre:</strong> {', '.join(artist_genre)}</p>" if artist_genre else "") + (f"<p><strong>Style:</strong> {', '.join(artist_style)}</p>" if artist_style else "") + f"<p>{artist_details.get('description', '')}</p></div>" if isinstance(artist_details, dict) and artist_details.get('description') else f"<!-- No artist description: artist_details={artist_details}, type={type(artist_details)} -->"}
+            {f"<div class='album-description'><div class='music-badges'><span class='music-badge'>Album Description</span></div><p>{album_description}</p></div>" if album_description else "<!-- No album description -->"}
+            {f"<div class='album-description'><div class='music-badges'><span class='music-badge'>Artist Biography</span></div>" + (f"<p><strong>Born:</strong> {artist_born}</p>" if artist_born else "") + (f"<p><strong>Genre:</strong> {', '.join(artist_genre)}</p>" if artist_genre else "") + (f"<p><strong>Style:</strong> {', '.join(artist_style)}</p>" if artist_style else "") + f"<p>{artist_description}</p></div>" if artist_description else "<!-- No artist description -->"}
           </div>
         </div>
       </div>
