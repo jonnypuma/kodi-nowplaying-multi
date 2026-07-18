@@ -5,61 +5,76 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.3] - 2025-01-01
+## [1.2.3] - 2026-07-18
 
 ### Added
-- Server-side preferences storage in JSON file (`preferences.json`) for persistence across container restarts
-- Preferences API endpoints (`/api/preferences` GET/POST) for saving and loading user settings
-- Preferences volume mount (`./kodi-np-multi/preferences:/app/preferences`) in Docker Compose
-- Atomic file writing for preferences to prevent corruption during concurrent writes
-- Automatic fallback to localStorage if server-side storage is unavailable
+- Optional friendly host labels via `KODI_HOST_LABEL_1`…`N` (and legacy `KODI_HOST_LABEL`), shown in the server dropdown, idle page, and multi-server overview.
+
+## [1.2.2] - 2026-07-18
+
+### Added
+- Pytest suite under `tests/` covering server env parsing, preference validation, load-job pruning, overview helpers, health/path safety, logging config, and movie/episode/music template smoke renders.
+- `requirements-dev.txt` for local test dependencies (`pytest`).
+
+## [1.2.1] - 2026-07-18
 
 ### Changed
-- User preferences (blur toggle, blur amount, overlay toggle, overlay opacity, marquee interval, fanart interval) now persist across container restarts
-- Preferences are stored server-side and shared across all browsers/devices accessing the application
-- Preferences are saved to both localStorage (immediate) and server (persistent) for reliability
+- Replaced print-based `[DEBUG]` / `[INFO]` / `[WARNING]` / `[ERROR]` output with structured Python logging controlled by the `LOG_LEVEL` environment variable (default `INFO`).
+- Added `logging_config.py` with optional `LOG_FORMAT=json` for one-line JSON logs.
 
-### Technical Details
-- Preferences stored in `/app/preferences/preferences.json` inside container
-- Preferences file is created automatically if it doesn't exist
-- All preference changes are merged with existing preferences (no data loss)
-- Atomic save operation (write to temp file, then replace) prevents file corruption
-
-## [1.0.2] - 2025-01-01
-
-### Added
-- Loading screen with animated "LOADING" text during page transitions
-- Smooth fade-out/fade-in transitions when switching servers or when media playback changes
-- New `/loading` route that displays animated loading animation before content loads
-- AJAX-based content loading to replace loading screen with nowplaying content seamlessly
+## [1.2.0] - 2026-07-18
 
 ### Changed
-- Updated h1 header styling (font-size: 35px, padding: 15px 15px) for better visual balance
-- Server dropdown highlighting now correctly shows green text for selected server across all media types
-- Page transitions now use loading screen instead of blank page during content generation
+- Moved movie, episode, and music now-playing HTML into Jinja2 templates under `templates/` while keeping media-specific Python logic in each `*_nowplaying.py` module.
+- Flask app loads templates from the local `templates/` directory; Docker image copies that folder into `/app/templates`.
 
-### Technical Details
-- Loading screen appears when:
-  - Media is detected and nowplaying HTML is being generated
-  - Server is switched via dropdown menu
-  - New item starts playing (episode, movie, or song change)
-- Uses DOMParser to parse and inject fetched HTML content
-- Fade-out animation (800ms) before loading screen, fade-in animation (500ms) for loading screen appearance
-
-### Known Issues
-- After server switch, page will reload again due to improper detection and handling of item id change 
-
-## [1.0.1] - 2025-01-01
-
-### Added
-- Retro shadow CSS style for side panel heading ("Now Playing On")
-- New checkbox-based dropdown menu CSS styling with improved visual design
+## [1.1.1] - 2026-07-18
 
 ### Fixed
-- Fixed server dropdown menu not populating for movies
-- Removed duplicate server management functions in movie_nowplaying.py that were overriding correct implementations
-- Resolved undefined variable reference (`currentServerIdParam`) in movie dropdown population
-- Fixed incorrect CSS class name (`current` instead of `current-server`) in movie dropdown highlighting
+- Prune in-memory now-playing load jobs by TTL (default 10 minutes finished / 30 minutes stale) and hard cap (50).
+- Drop rendered HTML from a load job after the first successful `/nowplaying-content` fetch to limit memory growth.
+
+## [1.1.0] - 2026-07-18
+
+### Added
+- Multi-Kodi overview wall at `/overview` with playing / paused / idle / offline tiles for every configured server.
+- `/api/overview` JSON endpoint that polls all servers in parallel.
+- Idle page link to the multi-server overview; click a tile to switch server and open now playing when media is active.
+
+## [1.0.4] - 2026-07-18
+
+### Changed
+- Artwork cache directory is now `/app/tmp` (configurable via `ART_TMP_DIR`) instead of overwriting container `/tmp`.
+- Docker Compose mounts `./kodi-np-multi/tmp` to `/app/tmp` and passes `FLASK_SECRET_KEY` / `LOG_LEVEL`.
+- Dockerfile installs pinned dependencies from `requirements.txt`.
+
+### Added
+- `/health` liveness endpoint for Docker healthchecks and uptime monitors.
+- Compose and Dockerfile `HEALTHCHECK` against `/health`.
+- `.dockerignore` and `.gitignore` (ignores `.env`, artwork cache, caches).
+
+### Fixed
+- Documented that `.env` keys must not have leading spaces (can prevent servers 2+ from loading).
+
+## [1.0.3] - 2026-07-18
+
+### Documentation
+- Rewrote Setup to match multi-server Docker Compose (`KODI_HOST_1`…`N`, port 6001).
+- Removed obsolete zip / single-host code-edit instructions.
+- Added `.env.example` with numbered hosts, optional `FLASK_SECRET_KEY`, and legacy env notes.
+- Clarified Homarr iframe URLs and reverse-proxy guidance for remote access.
+
+## [1.0.2] - 2026-04-26
+
+### Security
+- Hardened media and static file serving to reject path traversal and unexpected filenames.
+- Escaped Kodi metadata before rendering it into HTML pages.
+- Restricted preference updates to known UI settings and valid slider ranges.
+- Reduced preference logging so full preference payloads are not written to logs.
+
+### Documentation
+- Documented that the dashboard is intended for trusted LAN/VPN use and should not be exposed directly to the internet without an external access-control layer.
+- Corrected Docker Compose service examples to use `kodi-np-multi`.
 
 ## [1.0.0] - 2024-12-19
 

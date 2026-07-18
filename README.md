@@ -1,11 +1,11 @@
 This is a script to be run as a Docker container.
 
 It provides a html page showing what a Kodi device is playing and displays artwork, progress bar, media information, plot etc with background slideshow if more than one fanart is found. 
-<img width="2559" height="1375" alt="image" src="https://github.com/user-attachments/assets/962eeff1-2b03-4690-b0ca-6628c040b3f9" />
-<img width="2559" height="1372" alt="image" src="https://github.com/user-attachments/assets/48bde923-50be-496a-aaba-0f907a1a6ea0" />
 
 ## Features
 
+- **Multi-Kodi Overview**: `/overview` wall showing playing / paused / idle / offline status for every configured server
+- **Jinja Templates**: Movie, episode, and music layouts live in `templates/` with media-specific Python handlers
 - **Real-time Playback Detection**: Automatically detects when Kodi starts/stops playing media
 - **Playback State Monitoring**: Shows current play/pause state with visual indicators
 - **Interactive Playback Controls**: Play/pause icons with smooth fade transitions
@@ -22,8 +22,6 @@ It provides a html page showing what a Kodi device is playing and displays artwo
 - **Music Sample Rate/Record Label**: Enhanced audio information with kHz formatting and record label display
 - **Album Back Cover Flip**: Smooth front/back cover toggle for music albums
 - **Expandable Language Badges**: Interactive audio/subtitle language display with smart highlighting
-- **Multi-Server Support**: Switch between multiple Kodi devices from a convenient side panel
-- **Side Panel Controls**: Comprehensive settings panel with blur, overlay, and interval controls
 
 ## Playback Indicators
 
@@ -45,7 +43,7 @@ The interface features a hideable marquee banner that displays the current media
 ### Text Shimmer Effect
 
 The marquee banner includes an elegant text shimmer effect that adds visual interest:
-- **Automatic Triggering**: Effect runs at configurable intervals (default: 10 seconds, minimum: 5 seconds)
+- **Automatic Triggering**: Effect runs every 10 seconds when media is playing
 - **Letter-by-Letter Animation**: Each letter of "NOW PLAYING" animates individually
 - **Two-Stage Effect**: 
   1. **Dark Wave**: Letters fade to dark gray in sequence (80ms stagger between letters)
@@ -241,85 +239,121 @@ Each media type follows a sophisticated fallback hierarchy to ensure optimal vis
 ### Background Slideshow
 When multiple fanart images are available:
 - **Automatic Rotation**: Cycles through all available fanart images
-- **Configurable Intervals**: Each image displays for a configurable duration (default: 20 seconds, minimum: 5 seconds)
+- **20-Second Intervals**: Each image displays for 20 seconds
 - **Smooth Transitions**: Fade effects between background changes
 - **Dynamic Detection**: Automatically detects and uses all available fanart images
 - **Extrafanart Support**: Scans `extrafanart/` subdirectories to find additional background images
 - **Comprehensive Collection**: Includes fanart from both main directory and extrafanart folders for maximum variety
 
-## Multi-Server Support
-
-The application supports monitoring multiple Kodi devices simultaneously:
-- **Server Selection**: Choose from multiple configured Kodi servers via dropdown menu
-- **Side Panel Interface**: Slide-out panel from the right side of the screen for easy access
-- **Server Switching**: Seamlessly switch between servers without losing your place
-- **Connection Status**: Visual indicators show connection status for each server
-- **Persistent Selection**: Your server selection is remembered across sessions
-- **IP-Based Display**: Servers are listed and identified by their IP addresses
-
-## Side Panel Controls
-
-A comprehensive settings panel accessible via a slide-out panel from the right side of the screen:
-- **Server Selection**: Dropdown menu to switch between configured Kodi servers
-- **Blur Toggle**: Interactive toggle to enable/disable background blur effect
-- **Blur Slider**: Adjustable blur intensity (0-100%) when blur is enabled
-- **Overlay Toggle**: Interactive toggle to enable/disable the dark overlay background
-- **Overlay Opacity Slider**: Adjustable overlay opacity (0-100%) when overlay is enabled
-- **Marquee Interval Slider**: Configure the shimmer effect interval (5-60 seconds)
-- **Fanart Slideshow Interval Slider**: Configure the background image rotation interval (5-60 seconds)
-- **Persistent Settings**: All preferences are saved in localStorage and restored on page load
-- **Smooth Animations**: Panel slides in/out with smooth transitions
-- **Always Accessible**: Side panel is available on all pages, including the "no media playing" screen
-
 ## Setup
 
-Make sure Kodi has web control enabled on all devices you want to monitor
+### Prerequisites
 
-Unzip script.kodi-nowplaying.zip 
+1. On each Kodi device, enable **Settings → Services → Control → Allow remote control via HTTP**.
+2. Note the HTTP port and (if set) the username/password for web access.
 
-### Single Server Configuration
+### Configure servers
 
-Edit the `.env` file and input the IP to your Kodi device, HTTP port and user/pass:
+Copy the example env file and edit it with your Kodi hosts:
+
+```bash
+cp .env.example .env
 ```
-KODI_HOST_1=192.168.1.100:8080
+
+Use numbered variables for one or more servers (`KODI_HOST_1`, `KODI_HOST_2`, …). Do not put spaces before variable names.
+
+```env
+# Server 1 (required)
+KODI_HOST_1=http://192.168.0.10:8080
+KODI_HOST_LABEL_1=Living Room
 KODI_USERNAME_1=kodi
-KODI_PASSWORD_1=kodi
-```
+KODI_PASSWORD_1=secret
 
-### Multi-Server Configuration
-
-For multiple Kodi devices, add additional server entries in the `.env` file:
-```
-KODI_HOST_1=192.168.1.100:8080
-KODI_USERNAME_1=kodi
-KODI_PASSWORD_1=kodi
-
-KODI_HOST_2=192.168.1.101:8080
+# Server 2 (optional)
+KODI_HOST_2=http://192.168.0.11:8080
+KODI_HOST_LABEL_2=Bedroom
 KODI_USERNAME_2=kodi
-KODI_PASSWORD_2=kodi
-
-# Optional: Add more servers (KODI_HOST_3, KODI_USERNAME_3, KODI_PASSWORD_3, etc.)
+KODI_PASSWORD_2=secret
 ```
 
-Servers 2 and 3 are optional - comment them out in `docker-compose.yml` if not needed.
+Optional `KODI_HOST_LABEL_N` values appear in the server dropdown, idle message, and `/overview` tiles (falls back to IP if unset).
 
-### Docker Compose Configuration
+### Flask secret key (`FLASK_SECRET_KEY`)
 
-The `docker-compose.yml` file supports up to 3 servers by default. Additional servers can be added by following the same pattern:
-- `KODI_HOST_1`, `KODI_USERNAME_1`, `KODI_PASSWORD_1` (required)
-- `KODI_HOST_2`, `KODI_USERNAME_2`, `KODI_PASSWORD_2` (optional)
-- `KODI_HOST_3`, `KODI_USERNAME_3`, `KODI_PASSWORD_3` (optional)
+Used to sign Flask session cookies (for example the currently selected server). **The app works without setting one** — if unset, a random key is generated at startup. That is fine for a quick test, but the key changes on every container restart, so browser session cookies become invalid until the next request (the last selected server is still restored from `preferences.json` when possible).
 
-Build and start container:
-```docker compose build --no-cache kodi-np-multi```
-```docker compose up -d kodi-np-multi```
+For a stable key across restarts, generate one and put it in `.env`:
 
-Start playing media on your Kodi device(s)
+**PowerShell**
 
-Test locally by visiting http://localhost:6001/ <- or replace localhost with the IP of the container host
+```powershell
+# Works on Windows PowerShell 5.1 and PowerShell 7+
+$bytes = New-Object byte[] 32
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+($bytes | ForEach-Object { $_.ToString('x2') }) -join ''
 
-Mount it as a custom Homarr iframe tile pointing to http://localhost:6001/ <- or replace localhost with the IP of the container host
+# Alternatives (if available):
+openssl rand -hex 32
+python -c "import secrets; print(secrets.token_hex(32))"
+```
 
-The side panel toggle button (arrow on the right edge) allows you to switch between servers and adjust settings.
+**Linux / macOS**
 
+```bash
+openssl rand -hex 32
+# or:
+python3 -c "import secrets; print(secrets.token_hex(32))"
+# or:
+head -c 32 /dev/urandom | xxd -p -c 32
+```
+
+Then add it to `.env`:
+
+```env
+FLASK_SECRET_KEY=paste-the-generated-value-here
+```
+
+Optional: `LOG_LEVEL` (`DEBUG`, `INFO`, `WARNING`, `ERROR`; default `INFO`) controls log verbosity. Set `LOG_FORMAT=json` for one-line JSON logs.
+
+Legacy single-server names (`KODI_HOST`, `KODI_USER` / `KODI_USERNAME`, `KODI_PASS` / `KODI_PASSWORD`) still work if no numbered hosts are defined.
+
+Health check URL (for Docker / Uptime Kuma): `http://<host>:6001/health`
+
+### Build and run
+
+```bash
+docker compose build --no-cache kodi-np-multi
+docker compose up -d kodi-np-multi
+```
+
+### Tests
+
+From the repository root (Python 3.12+):
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
+Start playing media on a configured Kodi device, then open:
+
+- Idle / picker page: `http://<host>:6001/`
+- Multi-server overview: `http://<host>:6001/overview`
+- Now playing: `http://<host>:6001/nowplaying`
+
+Use the settings side panel to switch between configured Kodi servers.
+
+### Homarr iframe
+
+Add a custom Homarr iframe tile pointing to:
+
+```text
+http://<host>:6001/nowplaying
+```
+
+Replace `<host>` with the IP or hostname of the machine running Docker. For a wall that always shows the idle page until something plays, use `http://<host>:6001/`.
+
+## Network Exposure
+
+This dashboard is intended for a trusted local network or VPN. It does not include built-in user authentication, and it exposes now-playing data plus preference/server-management endpoints. Do not publish port `6001` directly to the internet. If remote access is needed, place it behind a reverse proxy or another access-control layer (for example Traefik, Caddy, or nginx basic auth / Authelia).
 

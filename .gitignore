@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+kodi-np-multi/tmp/*
+!kodi-np-multi/tmp/.gitkeep
+*.code-workspace
+.DS_Store

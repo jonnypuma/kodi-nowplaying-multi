@@ -1,0 +1,17 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/tmp/**
+!**/tmp/.gitkeep
+**/preferences/preferences.json
+*.md
+LICENSE
+**/*.code-workspace
+.cursor
+agent-transcripts

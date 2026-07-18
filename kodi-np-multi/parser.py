@@ -3,6 +3,11 @@ Media type parser for Kodi Now Playing application.
 Determines whether the current media is a movie or TV episode and routes to appropriate handler.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 def infer_playback_type(item):
     """
     Determine the type of media being played.
@@ -66,8 +71,8 @@ def route_media_display(item, session_id, downloaded_art, progress_data, details
         str: HTML content for the media display
     """
     playback_type = infer_playback_type(item)
-    print(f"[DEBUG] Parser - Playback type: {playback_type}", flush=True)
+    logger.debug("Parser - Playback type: %s", playback_type)
     handler = get_media_handler(playback_type)
-    print(f"[DEBUG] Parser - Handler: {handler}", flush=True)
+    logger.debug("Parser - Handler: %s", handler)
     
     return handler.generate_html(item, session_id, downloaded_art, progress_data, details)
