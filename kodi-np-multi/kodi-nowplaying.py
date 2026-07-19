@@ -603,7 +603,7 @@ ART_TMP_PATH.mkdir(parents=True, exist_ok=True)
 playback_poll_state = {}
 playback_poll_lock = threading.Lock()
 EPISODE_CHECK_INTERVAL = 10  # Check for episode changes every 10 seconds
-POLL_IDLE_CONFIRMATIONS = int(os.getenv("POLL_IDLE_CONFIRMATIONS", "3"))
+POLL_IDLE_CONFIRMATIONS = int(os.getenv("POLL_IDLE_CONFIRMATIONS", "2"))
 
 # Serialize heavy artwork RPC traffic per Kodi host
 art_download_locks = {}
@@ -1102,7 +1102,10 @@ def overview_page():
             .nav-links a:hover { color: #fff; }
             #grid {
                 display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+                grid-template-columns: repeat(
+                    auto-fit,
+                    minmax(min(100%, max(260px, calc((100% - 3 * 18px) / 4))), 1fr)
+                );
                 gap: 18px;
                 padding: 24px 32px 40px;
             }
@@ -3641,6 +3644,8 @@ def nowplaying_content(job_id):
         job = load_jobs.get(job_id)
         if not job:
             return "<h1>Loading job not found.</h1>", 404
+        if job.get("status") == "consumed":
+            return "<h1>Content already consumed.</h1>", 410
         if job["status"] != "done" or not job.get("html"):
             return "<h1>Still loading...</h1>", 202
         html_content = job["html"]
@@ -3778,6 +3783,7 @@ def loading():
             const text = document.getElementById('loading-text');
             let jobId = null;
             let pollTimer = null;
+            let contentRequested = false;
 
             function setProgress(percent, label) {
                 const clamped = Math.min(100, Math.max(0, Math.round(percent)));
@@ -3789,27 +3795,50 @@ def loading():
                 }
             }
 
+            function applyHtml(html) {
+                document.body.style.opacity = '0';
+                document.body.style.transition = 'opacity 0.5s ease';
+                setTimeout(() => {
+                    document.open();
+                    document.write(html);
+                    document.close();
+                }, 500);
+            }
+
+            function fetchContentOnce() {
+                if (contentRequested || !jobId) return;
+                contentRequested = true;
+                clearInterval(pollTimer);
+                pollTimer = null;
+                fetch('/nowplaying-content/' + jobId)
+                    .then(response => {
+                        // 202 is "ok" for fetch; only accept a real 200 payload
+                        if (response.status !== 200) {
+                            throw new Error('HTTP ' + response.status);
+                        }
+                        return response.text();
+                    })
+                    .then(html => {
+                        applyHtml(html);
+                    })
+                    .catch(() => {
+                        // HTML is one-shot after a successful fetch; don't document.write a 202/410 body
+                        window.location.href = '/nowplaying';
+                    });
+            }
+
             function pollStatus() {
-                if (!jobId) return;
+                if (!jobId || contentRequested) return;
                 fetch('/nowplaying-load-status/' + jobId)
                     .then(response => response.json())
                     .then(data => {
+                        if (contentRequested) return;
                         setProgress(data.progress || 0, data.message || 'Loading');
                         if (data.status === 'done') {
-                            clearInterval(pollTimer);
-                            fetch('/nowplaying-content/' + jobId)
-                                .then(response => response.text())
-                                .then(html => {
-                                    document.body.style.opacity = '0';
-                                    document.body.style.transition = 'opacity 0.5s ease';
-                                    setTimeout(() => {
-                                        document.open();
-                                        document.write(html);
-                                        document.close();
-                                    }, 500);
-                                });
+                            fetchContentOnce();
                         } else if (data.status === 'error') {
                             clearInterval(pollTimer);
+                            pollTimer = null;
                             text.textContent = data.message || 'Error loading';
                         }
                     })
