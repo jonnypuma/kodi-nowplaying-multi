@@ -13,6 +13,7 @@ from kodi_np.cache import (
     _poll_state_for,
     get_cache_entry,
     make_playback_fingerprint,
+    probe_playback_fingerprint,
     refresh_server_cache,
     store_playing_cache,
 )
@@ -218,19 +219,42 @@ def start_nowplaying_load():
     job_id = uuid.uuid4().hex
     server_id = session.get('active_server_id', 1) if has_request_context() else 1
     cached = get_cache_entry(server_id)
+    # Only serve cache when it matches what Kodi is actually playing now.
+    # Otherwise a track/artist change returns the previous page until the poller catches up.
     if cached and cached.get("html") and cached.get("playing") and cached.get("cache_ready"):
-        with _c.load_lock:
-            _c.load_jobs[job_id] = {
-                "status": "done",
-                "progress": 100,
-                "message": "Cached",
-                "created_at": time.time(),
-                "updated_at": time.time(),
-                "html": cached["html"],
-                "server_id": server_id,
-                "cache_hit": True,
-            }
-        return jsonify({"job_id": job_id, "cache_hit": True})
+        probe = None
+        try:
+            probe = probe_playback_fingerprint(server_id)
+        except Exception as e:
+            logger.debug("Cache-hit probe failed for server %s: %s", server_id, e)
+        cache_fp = cached.get("fingerprint")
+        live_fp = (probe or {}).get("fingerprint")
+        if (
+            probe
+            and probe.get("playing")
+            and cache_fp
+            and live_fp
+            and cache_fp == live_fp
+        ):
+            with _c.load_lock:
+                _c.load_jobs[job_id] = {
+                    "status": "done",
+                    "progress": 100,
+                    "message": "Cached",
+                    "created_at": time.time(),
+                    "updated_at": time.time(),
+                    "html": cached["html"],
+                    "server_id": server_id,
+                    "cache_hit": True,
+                }
+            return jsonify({"job_id": job_id, "cache_hit": True})
+        logger.info(
+            "Skipping stale cache for server %s (cache_fp=%s live_fp=%s playing=%s)",
+            server_id,
+            cache_fp,
+            live_fp,
+            (probe or {}).get("playing"),
+        )
 
     with _c.load_lock:
         _c.load_jobs[job_id] = {

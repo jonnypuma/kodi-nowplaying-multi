@@ -157,8 +157,10 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         else:
             logger.debug(f"Skipping banner as it appears to be a fanart image")
     clearlogo_url = f"/media/{downloaded_art.get('clearlogo')}" if downloaded_art.get("clearlogo") else ""
-    # For music, disable clearart completely to prevent fanart from showing underneath album cover
-    # Clearart often gets confused with fanart in music libraries
+    # Logo fallback: some libraries only have clearart.png in the artist folder
+    if not clearlogo_url and downloaded_art.get("clearart"):
+        clearlogo_url = f"/media/{downloaded_art.get('clearart')}"
+    # For music, do not render clearart under the album cover (often mistaken for fanart)
     clearart_url = ""
     if downloaded_art.get("clearart"):
         clearart_filename = downloaded_art.get("clearart", "")

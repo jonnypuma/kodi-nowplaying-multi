@@ -15,7 +15,7 @@ def test_make_playback_fingerprint_changes_with_item(app_module):
     assert a.startswith("movie:1:")
 
 
-def test_store_and_serve_cached_nowplaying(client, app_module):
+def test_store_and_serve_cached_nowplaying(client, app_module, patch_into):
     app_module.nowplaying_cache.clear()
     app_module.KODI_SERVERS = {
         1: {
@@ -52,6 +52,17 @@ def test_store_and_serve_cached_nowplaying(client, app_module):
 
     with client.session_transaction() as sess:
         sess["active_server_id"] = 1
+
+    # Cache hit only when live fingerprint still matches the stored page.
+    def matching_probe(server_id):
+        return {
+            "playing": True,
+            "fingerprint": payload["fingerprint"],
+            "media_type": "movie",
+            "title": "Demo Movie",
+        }
+
+    patch_into(app_module, "probe_playback_fingerprint", matching_probe)
     start = client.get("/start-nowplaying-load").get_json()
     assert start["cache_hit"] is True
     content = client.get(f"/nowplaying-content/{start['job_id']}")
@@ -60,6 +71,57 @@ def test_store_and_serve_cached_nowplaying(client, app_module):
     second = client.get(f"/nowplaying-content/{start['job_id']}")
     assert second.status_code == 410
     assert b"already consumed" in second.data
+
+
+def test_start_nowplaying_load_skips_stale_cache(client, app_module, patch_into, monkeypatch):
+    """Artist/track change must not return the previous now-playing HTML from cache."""
+    app_module.nowplaying_cache.clear()
+    app_module.load_jobs.clear()
+    app_module.KODI_SERVERS = {
+        1: {
+            "id": 1,
+            "host": "http://10.0.0.1:8080",
+            "ip": "10.0.0.1",
+            "label": "Living Room",
+            "auth": None,
+            "username": "",
+            "password": "",
+        },
+    }
+    app_module.store_playing_cache(1, {
+        "html": "<html><body>Aurora stale</body></html>",
+        "idle": False,
+        "downloaded_art": {},
+        "fingerprint": "song:11299:/aurora.flac:Animal::None:None",
+        "title": "Animal",
+        "media_type": "song",
+        "paused": False,
+        "session_id": "aurora-session",
+    })
+
+    def oasis_probe(server_id):
+        return {
+            "playing": True,
+            "fingerprint": "song:999:/oasis.flac:Fuckin in the Bushes::None:None",
+            "media_type": "song",
+            "title": "Fuckin in the Bushes",
+        }
+
+    patch_into(app_module, "probe_playback_fingerprint", oasis_probe)
+
+    # Avoid a real background build; we only care that cache was not served.
+    monkeypatch.setattr(
+        "kodi_np.routes.playback.run_nowplaying_job",
+        lambda job_id: None,
+    )
+
+    with client.session_transaction() as sess:
+        sess["active_server_id"] = 1
+    start = client.get("/start-nowplaying-load").get_json()
+    assert start["cache_hit"] is False
+    job = app_module.load_jobs[start["job_id"]]
+    assert job["status"] == "pending"
+    assert job.get("html") is None
 
 
 def test_clear_cache_playback_marks_idle(app_module):

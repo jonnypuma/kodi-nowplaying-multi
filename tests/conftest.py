@@ -147,6 +147,7 @@ def patch_into(monkeypatch):
         ],
         "probe_playback_fingerprint": [
             "kodi_np.cache.probe_playback_fingerprint",
+            "kodi_np.routes.playback.probe_playback_fingerprint",
         ],
         "refresh_server_cache": [
             "kodi_np.cache.refresh_server_cache",

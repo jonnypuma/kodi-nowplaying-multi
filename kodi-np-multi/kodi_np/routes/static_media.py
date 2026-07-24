@@ -14,13 +14,31 @@ logger = logging.getLogger("kodi.nowplaying")
 bp = Blueprint("static_media", __name__)
 
 
+def sniff_image_mimetype(path) -> str:
+    """Detect real image type from magic bytes (files are often saved as *.jpg)."""
+    try:
+        with open(path, "rb") as f:
+            header = f.read(16)
+    except OSError:
+        return "image/jpeg"
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if header.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if header[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if len(header) >= 12 and header.startswith(b"RIFF") and header[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/jpeg"
+
+
 @bp.route("/media/<filename>")
 def serve_image(filename):
     if not _c.ARTWORK_FILENAME_RE.fullmatch(filename):
         return "Invalid image path", 400
     path = resolve_safe_child(_c.ART_TMP_PATH, filename)
     if path and path.exists() and path.is_file():
-        return send_file(path, mimetype="image/jpeg")
+        return send_file(path, mimetype=sniff_image_mimetype(path))
     return "Image not found", 404
 
 

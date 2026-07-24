@@ -29,3 +29,39 @@ def test_remap_artist_art_to_song_tree():
         art_mod._remap_artist_art_to_song_tree(art, song)
         == "nfs://nas/share/Music/AURORA/clearlogo.png"
     )
+
+
+def test_music_artist_directory_one_up_from_album():
+    song = "nfs://nas/share/Music/AURORA/A Different Kind of Human - Step 2 (2019)/01.flac"
+    assert art_mod._music_artist_directory(song) == "nfs://nas/share/Music/AURORA"
+
+
+def test_prefer_music_artist_folder_art_sets_clearlogo(monkeypatch):
+    art_map = {
+        "clearlogo": r"image://U:\Kodi\ArtistInformation\AURORA\clearlogo.png/",
+    }
+    buckets = {"artist": {}}
+
+    def fake_probe(artist_dir, stems):
+        assert artist_dir.endswith("/AURORA")
+        if "clearlogo" in stems:
+            return f"{artist_dir}/clearlogo.png"
+        return ""
+
+    monkeypatch.setattr(art_mod, "_probe_artist_folder_art", fake_probe)
+    song = "nfs://nas/share/Music/AURORA/Album/track.flac"
+    art_mod.prefer_music_artist_folder_art(song, art_map, buckets=buckets, key_scope={})
+    assert art_map["clearlogo"] == "nfs://nas/share/Music/AURORA/clearlogo.png"
+    assert buckets["artist"]["clearlogo"] == art_map["clearlogo"]
+
+
+def test_prefer_music_artist_folder_art_accepts_clearart_as_logo(monkeypatch):
+    art_map = {}
+    monkeypatch.setattr(
+        art_mod,
+        "_probe_artist_folder_art",
+        lambda artist_dir, stems: f"{artist_dir}/clearart.png" if "clearart" in stems else "",
+    )
+    song = "nfs://nas/share/Music/AURORA/Album/track.flac"
+    art_mod.prefer_music_artist_folder_art(song, art_map, buckets={}, key_scope={})
+    assert art_map["clearlogo"] == "nfs://nas/share/Music/AURORA/clearart.png"

@@ -110,8 +110,9 @@ def _remap_artist_art_to_song_tree(art_path: str, song_file: str) -> str:
 
 
 # Stem -> preferred filenames when scanning the artist folder
+# clearlogo also accepts clearart: many libraries only ship clearart.png as the logo
 _ARTIST_FOLDER_ART_STEMS = {
-    "clearlogo": ("clearlogo", "logo", "clearlogo1"),
+    "clearlogo": ("clearlogo", "logo", "clearlogo1", "clearart"),
     "clearart": ("clearart",),
     "banner": ("banner",),
 }
@@ -145,6 +146,97 @@ def _scan_directory_for_art_stems(directory: str, stems: tuple) -> str:
         if name in stem_set:
             return file_path
     return ""
+
+
+def _probe_artist_folder_art(artist_dir: str, stems: tuple) -> str:
+    """Find art in Music/<Artist>/ via directory listing, then PrepareDownload probes."""
+    if not artist_dir or not stems:
+        return ""
+    found = _scan_directory_for_art_stems(artist_dir, stems)
+    if found:
+        return found
+
+    # GetDirectory can fail on some shares; probe common filenames the way fanart fallback does
+    for stem in stems:
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            bare = f"{artist_dir.rstrip('/')}/{stem}{ext}"
+            image_path = f"image://{urllib.parse.quote(bare, safe='')}/"
+            for path_arg in (image_path, bare):
+                try:
+                    response = kodi_rpc("Files.PrepareDownload", {"path": path_arg})
+                except Exception:
+                    continue
+                if not response or response.get("error") or not response.get("result"):
+                    continue
+                details = response.get("result", {}).get("details") or {}
+                if details.get("token") or details.get("path"):
+                    return bare
+    return ""
+
+
+def prefer_music_artist_folder_art(song_file: str, art_map: dict, buckets: dict | None = None, key_scope: dict | None = None):
+    """
+    Prefer Music/<Artist>/<artfile> (one folder up from the album) for logos/clearart.
+    Runs before share reuse so a local artist-folder path invalidates stale shared art.
+    """
+    if not song_file or not isinstance(art_map, dict):
+        return
+    album_dir = os.path.dirname(song_file.replace("\\", "/").rstrip("/"))
+    artist_dir = _music_artist_directory(song_file) or os.path.dirname(album_dir)
+    if not artist_dir or artist_dir == album_dir:
+        return
+
+    for art_key, stems in _ARTIST_FOLDER_ART_STEMS.items():
+        found = _probe_artist_folder_art(artist_dir, stems)
+        if not found:
+            continue
+        prior = art_map.get(art_key)
+        art_map[art_key] = found
+        if buckets is not None:
+            buckets.setdefault("artist", {})[art_key] = found
+        if key_scope is not None:
+            key_scope[art_key] = "artist"
+        if prior != found:
+            logger.info("Using artist-folder %s: %s", art_key, found)
+
+
+def _kodi_image_download_url(file_path: str, server: dict):
+    """Prepare a downloadable URL; prefer image:// (works for NFS) then bare path."""
+    if not file_path or not server:
+        return None
+    cleaned = normalize_art_source(file_path)
+    if not cleaned:
+        return None
+    if cleaned.startswith("http://") or cleaned.startswith("https://"):
+        return cleaned
+
+    candidates = []
+    if file_path.startswith("image://"):
+        candidates.append(file_path if file_path.endswith("/") else file_path + "/")
+    candidates.append(f"image://{urllib.parse.quote(cleaned, safe='')}/")
+    candidates.append(cleaned)
+
+    seen = set()
+    for path_arg in candidates:
+        if path_arg in seen:
+            continue
+        seen.add(path_arg)
+        try:
+            response = kodi_rpc("Files.PrepareDownload", {"path": path_arg})
+        except Exception as e:
+            logger.debug("PrepareDownload failed for %s: %s", path_arg, e)
+            continue
+        if not response or response.get("error") or not response.get("result"):
+            continue
+        details = response.get("result", {}).get("details") or {}
+        token = details.get("token")
+        path = details.get("path")
+        if token:
+            basename = _art_path_basename(cleaned)
+            return f"{server['host']}/vfs/{token}/{urllib.parse.quote(basename)}"
+        if path:
+            return f"{server['host']}/{path}"
+    return None
 
 
 def share_identity_hash(server_id, scope, identity):
@@ -396,6 +488,20 @@ def _prepare_and_download_art_locked(item, session_id, server, progress_cb=None,
 
     # Merge all artwork (music takes precedence, then TV show, then regular)
     art_map = {**art_map, **tvshow_art_map, **music_art_map}
+
+    # Music: resolve clearlogo/clearart from Music/<Artist>/ BEFORE share reuse
+    # so local files win over stale ArtistInformation share cache.
+    if media_type == "song" and item.get("file"):
+        prefer_music_artist_folder_art(
+            item.get("file"),
+            art_map,
+            buckets=buckets if enable_share else None,
+            key_scope=key_scope if enable_share else None,
+        )
+        # Keep music_art_map / art_map in sync after preference
+        for key in _ARTIST_FOLDER_ART_STEMS:
+            if art_map.get(key):
+                music_art_map[key] = art_map[key]
 
     if enable_share:
         if media_type == "episode":
@@ -870,33 +976,26 @@ def _prepare_and_download_art_locked(item, session_id, server, progress_cb=None,
         if raw_path and (raw_path.startswith("https://") or raw_path.startswith("http://")):
             image_url = raw_path
         else:
-            # Handle local Kodi paths
-            image_url = None
-            try:
-                if raw_path:
-                    response = kodi_rpc("Files.PrepareDownload", {"path": raw_path})
-                else:
-                    response = None
-                details = response.get("result", {}).get("details", {}) if response else {}
-                token = details.get("token")
-                path = details.get("path")
-
-                if token and raw_path:
-                    basename = _art_path_basename(raw_path)
-                    image_url = f"{server['host']}/vfs/{token}/{urllib.parse.quote(basename)}"
-                elif path:
-                    image_url = f"{server['host']}/{path}"
-                else:
-                    logger.error(f"No valid download path for {art_type}")
-            except Exception as e:
-                logger.warning(f"Failed to prepare download for {art_type}: {e}")
+            # Prefer image:// PrepareDownload (required for many NFS art paths)
+            image_url = _kodi_image_download_url(raw_path, server)
+            if not image_url:
+                logger.error(f"No valid download path for {art_type}")
             
             # If primary path failed, try fallback paths for artist artwork
             if not image_url and art_type in ["fanart", "clearlogo", "clearart", "banner", "front", "back", "discart"]:
                 logger.debug(f"Primary path failed, trying fallback paths for {art_type}")
-                # Try to construct fallback paths based on album/artist folder structure
+                # Fast path: one folder up from the song (Music/<Artist>/)
                 current_file = item.get("file", "")
-                if _is_remote_song_path(current_file):
+                if item.get("type") == "song" and _is_remote_song_path(current_file):
+                    artist_dir = _music_artist_directory(current_file)
+                    stems = _ARTIST_FOLDER_ART_STEMS.get(art_type) or (art_type,)
+                    probed = _probe_artist_folder_art(artist_dir, stems) if artist_dir else ""
+                    if probed:
+                        image_url = _kodi_image_download_url(probed, server)
+                        if image_url:
+                            raw_path = probed
+                            logger.info("Resolved %s via artist folder fallback: %s", art_type, probed)
+                if _is_remote_song_path(current_file) and not image_url:
                     try:
                         # Traverse upwards to find directories that contain fanart files
                         # This is the most reliable way since fanart is typically only in artist directories
@@ -989,7 +1088,7 @@ def _prepare_and_download_art_locked(item, session_id, server, progress_cb=None,
                             elif art_type == "clearlogo":
                                 for candidate in (
                                     clearlogo_png, clearlogo_jpg, clearlogo_jpeg, clearlogo_webp,
-                                    logo_png, logo_jpg,
+                                    logo_png, logo_jpg, clearart_png, clearart_jpg,
                                 ):
                                     fallback_paths.append(f"image://{urllib.parse.quote(candidate, safe='')}/")
                             elif art_type == "clearart":
@@ -1028,20 +1127,8 @@ def _prepare_and_download_art_locked(item, session_id, server, progress_cb=None,
                         for fallback_path in fallback_paths:
                             try:
                                 logger.debug(f"Trying fallback path: {fallback_path}")
-                                response = kodi_rpc("Files.PrepareDownload", {"path": fallback_path})
-                                if not response:
-                                    continue
-                                details = response.get("result", {}).get("details", {})
-                                token = details.get("token")
-                                path = details.get("path")
-                                
-                                if token:
-                                    basename = _art_path_basename(fallback_path)
-                                    image_url = f"{server['host']}/vfs/{token}/{urllib.parse.quote(basename)}"
-                                    logger.debug(f"Found fallback path for {art_type}: {image_url}")
-                                    break
-                                elif path:
-                                    image_url = f"{server['host']}/{path}"
+                                image_url = _kodi_image_download_url(fallback_path, server)
+                                if image_url:
                                     logger.debug(f"Found fallback path for {art_type}: {image_url}")
                                     break
                             except Exception as e:
