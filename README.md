@@ -1,6 +1,23 @@
 This is a script to be run as a Docker container.
 
-It provides a html page showing what a Kodi device is playing and displays artwork, progress bar, media information, plot etc with background slideshow if more than one fanart is found. 
+It provides a html page showing what a Kodi device is playing and displays artwork, progress bar, media information, plot etc with background slideshow if more than one fanart is found.
+
+## Package layout
+
+The Flask app lives in the `kodi_np/` package. Docker still starts via the thin shim `kodi-nowplaying.py` (`CMD ["python", "kodi-nowplaying.py"]`).
+
+| Module | Responsibility |
+|--------|----------------|
+| `kodi_np/config.py` | Env knobs, locks, shared process state |
+| `kodi_np/rpc.py` | JSON-RPC client + unreachable backoff |
+| `kodi_np/servers.py` / `preferences.py` | Multi-server registry and prefs file |
+| `kodi_np/art.py` | Artwork download + identity-scoped share reuse |
+| `kodi_np/cache.py` | Per-server now-playing cache + poller |
+| `kodi_np/nowplaying.py` | HTML build, load jobs, soft-update payloads |
+| `kodi_np/routes/` | Blueprints (pages, playback, overview, static) |
+| `kodi_np/app.py` | `create_app()` factory |
+| `templates/` | Jinja pages (`index`, `overview`, `loading`, media layouts) |
+| `episode_nowplaying.py` / `music_nowplaying.py` / `movie_nowplaying.py` | Media HTML generators (import `kodi_np.rpc`) |
 
 ## Features
 

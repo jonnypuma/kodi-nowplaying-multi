@@ -2,6 +2,7 @@
 Music-specific HTML generation for Kodi Now Playing application.
 Handles music display with album poster, discart/cdart spinning animation, and music-specific layout.
 """
+import json
 import logging
 from html import escape
 from flask import render_template
@@ -306,17 +307,8 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     # Get enhanced audio information using XBMC.GetInfoLabels for real-time data
     enhanced_audio_info = {}
     try:
-        # Import the kodi_rpc function from the main module
-        import sys
-        import os
-        import importlib.util
-        
-        # Load the kodi-nowplaying.py module (with hyphen)
-        spec = importlib.util.spec_from_file_location("kodi_nowplaying", "kodi-nowplaying.py")
-        kodi_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(kodi_module)
-        kodi_rpc = kodi_module.kodi_rpc
-        
+        from kodi_np.rpc import kodi_rpc
+
         logger.debug(f"Attempting to get enhanced audio info via XBMC.GetInfoLabels")
         
         # Get real-time audio information
@@ -458,7 +450,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
             f"<img class='poster front-face' src='{album_poster_url}' alt='Album front cover' />"
             f"<img class='poster back-face' src='{back_cover_url}' alt='Album back cover' />"
             "</div>"
-            "<div class='flip-indicator'>Show Back</div>"
+            "<button type='button' class='flip-indicator' aria-label='Show album back cover'>Show Back</button>"
         )
     elif album_poster_url:
         album_poster_html = f"<img class='poster' src='{album_poster_url}' alt='Album front cover' />"
@@ -472,13 +464,13 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     else:
         title_banner_html = f"<h2 style='margin-bottom: 4px;'>🎵 {artist_names}</h2>"
     album_badge_html = (
-        f"<span class='music-badge'>{album}" + (f" ({album_year})" if album_year else "") + "</span>"
+        f"<span class='music-badge' id='soft-badge-album'>{album}" + (f" ({album_year})" if album_year else "") + "</span>"
         if album
-        else ""
+        else "<span class='music-badge' id='soft-badge-album' style='display:none'></span>"
     )
-    disc_badge_html = f"<span class='music-badge'>{disc_badge}</span>" if disc_badge else ""
-    track_badge_html = f"<span class='music-badge'>{track_badge}</span>" if track_badge else ""
-    title_badge_html = f"<span class='music-badge'>{title_badge}</span>" if title_badge else ""
+    disc_badge_html = f"<span class='music-badge' id='soft-badge-disc'>{disc_badge}</span>" if disc_badge else "<span class='music-badge' id='soft-badge-disc' style='display:none'></span>"
+    track_badge_html = f"<span class='music-badge' id='soft-badge-track'>{track_badge}</span>" if track_badge else "<span class='music-badge' id='soft-badge-track' style='display:none'></span>"
+    title_badge_html = f"<span class='music-badge' id='soft-badge-title'>{title_badge}</span>" if title_badge else "<span class='music-badge' id='soft-badge-title' style='display:none'></span>"
     album_rating_html = (
         f"<div class='album-title'>Album Rating: ⭐ {album_rating:.1f}</div>"
         if album_rating > 0
@@ -504,23 +496,46 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     duration_display = _format_playback_time(duration, duration)
     paused_js = str(paused).lower()
     album_description_html = (
-        f"<div class='album-description'><div class='music-badges'><span class='music-badge'>Album Description</span></div><p>{album_description}</p></div>"
+        f"<div class='album-description' id='soft-album-description'><div class='music-badges'><span class='music-badge'>Album Description</span></div><p id='soft-album-description-text'>{album_description}</p></div>"
         if album_description
-        else "<!-- No album description -->"
+        else "<div class='album-description' id='soft-album-description' style='display:none'><div class='music-badges'><span class='music-badge'>Album Description</span></div><p id='soft-album-description-text'></p></div>"
     )
     artist_bio_parts = []
     if artist_description:
         artist_bio_parts.append(
-            "<div class='album-description'><div class='music-badges'><span class='music-badge'>Artist Biography</span></div>"
+            "<div class='album-description' id='soft-artist-bio'><div class='music-badges'><span class='music-badge'>Artist Biography</span></div>"
         )
         if artist_born:
-            artist_bio_parts.append(f"<p><strong>Born:</strong> {artist_born}</p>")
+            artist_bio_parts.append(f"<p id='soft-artist-born'><strong>Born:</strong> {artist_born}</p>")
         if artist_genre:
             artist_bio_parts.append(f"<p><strong>Genre:</strong> {', '.join(artist_genre)}</p>")
         if artist_style:
             artist_bio_parts.append(f"<p><strong>Style:</strong> {', '.join(artist_style)}</p>")
-        artist_bio_parts.append(f"<p>{artist_description}</p></div>")
-    artist_bio_html = "".join(artist_bio_parts) if artist_bio_parts else "<!-- No artist description -->"
+        artist_bio_parts.append(f"<p id='soft-artist-bio-text'>{artist_description}</p></div>")
+    artist_bio_html = "".join(artist_bio_parts) if artist_bio_parts else "<div class='album-description' id='soft-artist-bio' style='display:none'><div class='music-badges'><span class='music-badge'>Artist Biography</span></div><p id='soft-artist-bio-text'></p></div>"
+
+    # Wrap album art region for soft updates
+    album_poster_html = f"<div id='soft-album-art'>{album_poster_html}</div>"
+    discart_html = f"<div id='soft-discart'>{discart_html}</div>" if discart_html else "<div id='soft-discart'></div>"
+
+    soft_identity = {
+        "media_type": "song",
+        "item_id": f"song_{item.get('id')}" if item.get("id") is not None else "",
+        "tvshow_id": None,
+        "season": None,
+        "album_id": details.get("albumid") if isinstance(details, dict) else None,
+        "artist_id": None,
+    }
+    if isinstance(details, dict):
+        raw_artist = details.get("artistid")
+        if isinstance(raw_artist, list) and raw_artist:
+            soft_identity["artist_id"] = raw_artist[0]
+        elif raw_artist is not None and not isinstance(raw_artist, list):
+            soft_identity["artist_id"] = raw_artist
+        # album details object shouldn't overwrite albumid — GetSongDetails merges albumid onto details
+        if soft_identity["album_id"] is None and isinstance(album_details, dict):
+            soft_identity["album_id"] = album_details.get("albumid")
+    soft_identity_json = json.dumps(soft_identity)
 
     return render_template(
         "music_nowplaying.html",
@@ -554,4 +569,5 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         duration_display=duration_display,
         album_description_html=album_description_html,
         artist_bio_html=artist_bio_html,
+        soft_identity_json=soft_identity_json,
     )

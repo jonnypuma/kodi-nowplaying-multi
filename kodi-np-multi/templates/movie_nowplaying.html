@@ -152,7 +152,7 @@
           background: linear-gradient(135deg, #4caf50 0%, #45a049 50%, #4caf50 100%);
           height: 20px;
           border-radius: 15px 3px 3px 15px;
-          width: {{ percent }}%;
+          width: 0%;
           transition: width 0.5s;
           position: relative;
           box-shadow: 
@@ -966,16 +966,29 @@
           object-fit: contain;
         }
       </style>
+      <script type="application/json" id="np-bootstrap">{"elapsed":{{ elapsed }},"duration":{{ duration }},"paused":{{ paused_js }},"percent":{{ percent }}}</script>
       <script>
-        let elapsed = {{ elapsed }};
-        let duration = {{ duration }};
-        let paused = {{ paused_js }};
+        const __np = JSON.parse(document.getElementById('np-bootstrap').textContent);
+        let elapsed = __np.elapsed;
+        let duration = __np.duration;
+        let paused = __np.paused;
         let lastPlaybackState = null;
         let noPlayCount = 0;
         let redirectingToIdle = false;
         let playbackPollInFlight = false;
         let playbackPollTimer = null;
         const PLAYBACK_POLL_MS = 4000;
+        (function initProgressBar() {
+          function apply() {
+            const bar = document.querySelector('.progress .bar') || document.querySelector('.bar');
+            if (bar && typeof __np.percent === 'number') bar.style.width = __np.percent + '%';
+          }
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', apply);
+          } else {
+            apply();
+          }
+        })();
         
         // Side Panel Functions - Define at top to ensure availability
         function toggleSidePanel() {
@@ -1339,7 +1352,7 @@
                 noPlayCount += 1;
               }
 
-              if (isNotPlaying && noPlayCount >= 4 && !redirectingToIdle) {
+              if (isNotPlaying && noPlayCount >= 2 && !redirectingToIdle) {
                 redirectingToIdle = true;
                 console.log('[DEBUG] Redirecting to idle after debounce');
                 document.body.classList.add('fade-out');
@@ -1613,15 +1626,19 @@
             const response = await fetch('/api/preferences');
             if (response.ok) {
               const prefs = await response.json();
-              // Merge with localStorage as fallback
+              const pick = (key, fallback) =>
+                Object.prototype.hasOwnProperty.call(prefs, key) && prefs[key] != null && prefs[key] !== ''
+                  ? String(prefs[key])
+                  : (localStorage.getItem(key) || fallback);
+              // Server wins when key exists (including "disabled"); localStorage only fills gaps
               return {
-                blurPreference: prefs.blurPreference || localStorage.getItem('blurPreference') || 'non-blurred',
-                blurAmount: prefs.blurAmount || localStorage.getItem('blurAmount') || '50',
-                overlayPreference: prefs.overlayPreference || localStorage.getItem('overlayPreference') || 'enabled',
-                overlayOpacity: prefs.overlayOpacity || localStorage.getItem('overlayOpacity') || '85',
-                marqueeInterval: prefs.marqueeInterval || localStorage.getItem('marqueeInterval') || '10',
-                fanartInterval: prefs.fanartInterval || localStorage.getItem('fanartInterval') || '20',
-                fanartMinSizeKB: prefs.fanartMinSizeKB || localStorage.getItem('fanartMinSizeKB') || '200',
+                blurPreference: pick('blurPreference', 'non-blurred'),
+                blurAmount: pick('blurAmount', '50'),
+                overlayPreference: pick('overlayPreference', 'enabled'),
+                overlayOpacity: pick('overlayOpacity', '85'),
+                marqueeInterval: pick('marqueeInterval', '10'),
+                fanartInterval: pick('fanartInterval', '20'),
+                fanartMinSizeKB: pick('fanartMinSizeKB', '200'),
                 _server: prefs
               };
             }
@@ -1656,6 +1673,23 @@
             }
           } catch (error) {
             console.log(`[DEBUG] Error saving preference ${key} to server:`, error);
+          }
+        }
+
+        async function savePreferencesBatch(updates) {
+          if (!updates || !Object.keys(updates).length) return;
+          Object.entries(updates).forEach(([key, value]) => localStorage.setItem(key, value));
+          try {
+            const response = await fetch('/api/preferences', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updates)
+            });
+            if (!response.ok) {
+              console.log('[DEBUG] Failed to batch-save preferences to server');
+            }
+          } catch (error) {
+            console.log('[DEBUG] Error batch-saving preferences:', error);
           }
         }
         
@@ -1758,7 +1792,7 @@
           savePreference('overlayOpacity', opacityValue.toString());
         }
         
-        function updateMarqueeInterval(value) {
+        function updateMarqueeInterval(value, persist = true) {
           const intervalValue = parseInt(value);
           document.getElementById('marqueeIntervalValue').textContent = intervalValue + 's';
           
@@ -1785,10 +1819,12 @@
             }
           }, intervalValue * 1000);
           
-          savePreference('marqueeInterval', intervalValue.toString());
+          if (persist) {
+            savePreference('marqueeInterval', intervalValue.toString());
+          }
         }
         
-        function updateFanartInterval(value) {
+        function updateFanartInterval(value, persist = true) {
           const intervalValue = parseInt(value);
           document.getElementById('fanartIntervalValue').textContent = intervalValue + 's';
           
@@ -1801,13 +1837,17 @@
             fanartInterval = setInterval(window.cycleFanarts, intervalValue * 1000);
           }
           
-          savePreference('fanartInterval', intervalValue.toString());
+          if (persist) {
+            savePreference('fanartInterval', intervalValue.toString());
+          }
         }
 
-        function updateFanartMinSize(value) {
+        function updateFanartMinSize(value, persist = true) {
           const sizeValue = parseInt(value);
           document.getElementById('fanartMinSizeValue').textContent = sizeValue + 'kB';
-          savePreference('fanartMinSizeKB', sizeValue.toString());
+          if (persist) {
+            savePreference('fanartMinSizeKB', sizeValue.toString());
+          }
         }
         
         async function initializeBlurToggle() {
@@ -1847,7 +1887,8 @@
             document.getElementById('blurValue').textContent = savedBlurAmount + '%';
           }
 
-          // Sync prefs to server if missing there
+          // Sync missing prefs to server in one request (avoid concurrent POST races)
+          const missing = {};
           const prefKeys = [
             ['blurPreference', savedBlurPreference],
             ['blurAmount', savedBlurAmount],
@@ -1859,9 +1900,12 @@
           ];
           prefKeys.forEach(([key, value]) => {
             if (!Object.prototype.hasOwnProperty.call(serverPrefs, key)) {
-              savePreference(key, value);
+              missing[key] = value;
             }
           });
+          if (Object.keys(missing).length) {
+            savePreferencesBatch(missing);
+          }
           
           // Initialize overlay toggle
           const body = document.querySelector('body');
@@ -1890,19 +1934,19 @@
             document.getElementById('opacityValue').textContent = savedOpacity + '%';
           }
           
-          // Initialize intervals
+          // Initialize intervals (persist=false so page load does not rewrite preferences)
           if (document.getElementById('marqueeIntervalSlider')) {
-            updateMarqueeInterval(savedMarqueeInterval);
+            updateMarqueeInterval(savedMarqueeInterval, false);
             document.getElementById('marqueeIntervalSlider').value = savedMarqueeInterval;
           }
           
           if (document.getElementById('fanartIntervalSlider')) {
-            updateFanartInterval(savedFanartInterval);
+            updateFanartInterval(savedFanartInterval, false);
             document.getElementById('fanartIntervalSlider').value = savedFanartInterval;
           }
 
           if (document.getElementById('fanartMinSizeSlider')) {
-            updateFanartMinSize(savedFanartMinSize);
+            updateFanartMinSize(savedFanartMinSize, false);
             document.getElementById('fanartMinSizeSlider').value = savedFanartMinSize;
           }
         }
@@ -2158,7 +2202,7 @@
             </span>
             <div class="progress-container">
               <div class="progress">
-                <div class="bar"></div>
+                <div class="bar" style="width: {{ percent }}%;"></div>
               </div>
             </div>
           </div>
@@ -2213,7 +2257,7 @@
             <div class="side-panel-row">
               <label>Toggle overlay:</label>
               <label class="toggle">
-                <input type="checkbox" class="toggle__input" id="overlayToggle" onchange="toggleOverlay()">
+                <input type="checkbox" class="toggle__input" id="overlayToggle" checked onchange="toggleOverlay()">
                 <span class="toggle-track">
                   <span class="toggle-indicator">
                     <svg class="checkMark" viewBox="0 0 20 20">

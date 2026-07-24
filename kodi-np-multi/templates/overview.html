@@ -1,0 +1,288 @@
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Kodi Overview</title>
+        <style>
+            :root {
+                --bg0: #141414;
+                --bg1: #222;
+                --card: rgba(0, 0, 0, 0.55);
+                --green: #4caf50;
+                --amber: #ffb300;
+                --red: #e53935;
+                --muted: rgba(255, 255, 255, 0.65);
+            }
+            * { box-sizing: border-box; }
+            body {
+                margin: 0;
+                min-height: 100vh;
+                font-family: "Century Gothic", CenturyGothic, AppleGothic, sans-serif;
+                color: #fff;
+                background: linear-gradient(145deg, var(--bg0), var(--bg1) 55%, #2a2a2a);
+            }
+            header {
+                display: flex;
+                align-items: center;
+                padding: 28px 32px 8px;
+            }
+            h1 {
+                margin: 0;
+                font-size: clamp(1.4rem, 2.5vw, 2rem);
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+                color: var(--green);
+                text-shadow: 2px 2px 0 rgba(0,0,0,0.35);
+            }
+            #grid {
+                display: grid;
+                grid-template-columns: repeat(
+                    auto-fit,
+                    minmax(min(100%, max(260px, calc((100% - 3 * 18px) / 4))), 1fr)
+                );
+                gap: 18px;
+                padding: 24px 32px 40px;
+            }
+            .tile {
+                background: var(--card);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-left: 4px solid rgba(255,255,255,0.2);
+                border-radius: 12px;
+                padding: 20px 18px;
+                min-height: 160px;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+                overflow: hidden;
+            }
+            .tile.playing { border-left-color: var(--green); cursor: pointer; }
+            .tile.paused { border-left-color: var(--amber); cursor: pointer; }
+            .tile.offline { border-left-color: var(--red); opacity: 0.85; }
+            .tile.idle { border-left-color: rgba(255,255,255,0.25); }
+            .tile.playing:hover, .tile.paused:hover {
+                transform: translateY(-2px);
+                background: rgba(0,0,0,0.7);
+            }
+            .tile-art {
+                margin: -20px -18px 4px;
+                height: 140px;
+                background: rgba(0,0,0,0.35);
+                overflow: hidden;
+            }
+            .tile-art img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                display: block;
+            }
+            .tile-ip { font-size: 1.15rem; font-weight: 600; letter-spacing: 0.03em; }
+            .tile-host { color: var(--muted); font-size: 0.85rem; word-break: break-all; }
+            .badge {
+                align-self: flex-start;
+                padding: 4px 10px;
+                border-radius: 999px;
+                font-size: 0.75rem;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                background: rgba(255,255,255,0.1);
+            }
+            .badge.playing { background: rgba(76,175,80,0.25); color: #a5d6a7; }
+            .badge.paused { background: rgba(255,179,0,0.22); color: #ffe082; }
+            .badge.idle { background: rgba(255,255,255,0.08); color: var(--muted); }
+            .badge.offline { background: rgba(229,57,53,0.22); color: #ef9a9a; }
+            .tile-meta { color: var(--muted); font-size: 0.85rem; text-transform: capitalize; }
+            .tile-ready { color: #a5d6a7; font-size: 0.75rem; }
+            .tile-status-row {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+                margin-top: auto;
+            }
+            .tile-title {
+                font-size: 1.05rem;
+                line-height: 1.35;
+                flex: 1;
+                min-width: 0;
+            }
+            .tile-retry {
+                flex-shrink: 0;
+                border: 1px solid rgba(255,255,255,0.25);
+                background: rgba(255,255,255,0.08);
+                color: #fff;
+                border-radius: 8px;
+                padding: 6px 10px;
+                font-size: 0.8rem;
+                cursor: pointer;
+            }
+            .tile-retry:hover { background: rgba(76,175,80,0.28); border-color: rgba(76,175,80,0.55); }
+            .tile-retry:disabled {
+                opacity: 0.55;
+                cursor: wait;
+            }
+            .tile-backoff { color: #ef9a9a; font-size: 0.75rem; }
+            .empty, .error-note {
+                grid-column: 1 / -1;
+                color: var(--muted);
+                font-style: italic;
+            }
+            footer {
+                padding: 0 32px 28px;
+                color: var(--muted);
+                font-size: 0.85rem;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>Kodi Overview</h1>
+        </header>
+        <div id="grid"><div class="empty">Loading servers…</div></div>
+        <footer id="updated">Refreshing every 5 seconds</footer>
+        <script>
+            const grid = document.getElementById('grid');
+            const updated = document.getElementById('updated');
+
+            function badgeClass(server) {
+                if (!server.connected) return 'offline';
+                if (server.playing && server.paused) return 'paused';
+                if (server.playing) return 'playing';
+                return 'idle';
+            }
+
+            function badgeLabel(server) {
+                if (!server.connected) return 'Offline';
+                if (server.playing && server.paused) return 'Paused';
+                if (server.playing) return 'Playing';
+                return 'Idle';
+            }
+
+            function tileClass(server) {
+                return 'tile ' + badgeClass(server);
+            }
+
+            function formatBackoff(seconds) {
+                const s = Math.max(0, Math.floor(seconds || 0));
+                if (s <= 0) return '';
+                const m = Math.floor(s / 60);
+                const r = s % 60;
+                if (m <= 0) return r + 's';
+                return m + 'm ' + r + 's';
+            }
+
+            function statusTitle(server) {
+                if (server.playing) return server.title || 'Playing';
+                if (server.connected) return 'Nothing playing';
+                const backoff = formatBackoff(server.backoff_remaining);
+                if (backoff) return (server.error || 'Connection failed') + ' · retry in ' + backoff;
+                return server.error || 'Unreachable';
+            }
+
+            async function openServer(serverId, playing) {
+                try {
+                    await fetch('/api/switch-server/' + serverId, { method: 'POST' });
+                } catch (e) {}
+                window.location.href = playing ? '/loading' : '/';
+            }
+
+            async function retryServer(serverId, button) {
+                if (button) {
+                    button.disabled = true;
+                    button.textContent = 'Retrying…';
+                }
+                try {
+                    const res = await fetch('/api/retry-server/' + serverId, { method: 'POST' });
+                    const data = await res.json();
+                    if (data && data.server) {
+                        await refresh();
+                        return;
+                    }
+                } catch (e) {}
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = 'Retry';
+                }
+                await refresh();
+            }
+
+            function serverDisplayName(server) {
+                if (!server) return '';
+                if (server.name) return server.name;
+                const label = (server.label || '').trim();
+                const ip = server.ip || '';
+                if (label && ip) return label + ' (' + ip + ')';
+                if (label) return label;
+                return ip || server.host || ('Server ' + server.id);
+            }
+
+            function render(servers) {
+                if (!servers.length) {
+                    grid.innerHTML = '<div class="empty">No Kodi servers configured. Set KODI_HOST_1…N in .env</div>';
+                    return;
+                }
+                grid.innerHTML = '';
+                servers.forEach(server => {
+                    const tile = document.createElement('div');
+                    tile.className = tileClass(server);
+                    const name = serverDisplayName(server);
+                    const subtitle = server.host || '';
+                    const title = statusTitle(server);
+                    const needsRetry = !server.connected || !!server.error || (server.backoff_remaining > 0);
+                    const artHtml = server.thumb
+                        ? '<div class="tile-art"><img src="' + server.thumb + '" alt=""></div>'
+                        : '';
+                    const readyHtml = server.cache_ready
+                        ? '<div class="tile-ready">Ready · instant open</div>'
+                        : '';
+                    const retryHtml = needsRetry
+                        ? '<button type="button" class="tile-retry" data-server-id="' + server.id + '">Retry</button>'
+                        : '';
+                    tile.innerHTML =
+                        artHtml +
+                        '<div class="tile-ip"></div>' +
+                        '<div class="tile-host"></div>' +
+                        '<span class="badge ' + badgeClass(server) + '">' + badgeLabel(server) + '</span>' +
+                        '<div class="tile-status-row"><div class="tile-title"></div>' + retryHtml + '</div>' +
+                        (server.media_type ? '<div class="tile-meta"></div>' : '') +
+                        readyHtml;
+                    tile.querySelector('.tile-ip').textContent = name;
+                    tile.querySelector('.tile-host').textContent = subtitle;
+                    tile.querySelector('.tile-title').textContent = title;
+                    const meta = tile.querySelector('.tile-meta');
+                    if (meta) meta.textContent = server.media_type;
+                    const retryBtn = tile.querySelector('.tile-retry');
+                    if (retryBtn) {
+                        retryBtn.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            retryServer(server.id, retryBtn);
+                        });
+                    }
+                    if (server.connected) {
+                        tile.addEventListener('click', () => openServer(server.id, !!server.playing));
+                        tile.title = server.playing
+                            ? (server.cache_ready ? 'Open cached now playing' : 'Open now playing for this server')
+                            : 'Select this server';
+                    }
+                    grid.appendChild(tile);
+                });
+                updated.textContent = 'Updated ' + new Date().toLocaleTimeString();
+            }
+
+            async function refresh() {
+                try {
+                    const res = await fetch('/api/overview');
+                    const data = await res.json();
+                    render(data.servers || []);
+                } catch (e) {
+                    grid.innerHTML = '<div class="error-note">Failed to load overview</div>';
+                }
+            }
+
+            refresh();
+            setInterval(refresh, 5000);
+        </script>
+    </body>
+    </html>

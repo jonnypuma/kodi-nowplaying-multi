@@ -1,0 +1,570 @@
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Kodi Now Playing</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background: linear-gradient(to bottom right, #222, #444);
+                color: white;
+                margin: 0;
+                padding: 0;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                opacity: 1;
+                transition: opacity 1.5s ease;
+                animation: fadeIn 1.5s ease;
+            }
+            body.fade-out {
+                opacity: 0;
+            }
+            @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
+            .message-box {
+                background: rgba(0,0,0,0.6);
+                padding: 40px;
+                border-radius: 12px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+                font-size: 1.5em;
+                font-style: italic;
+                text-align: center;
+            }
+            
+            /* Side Panel Styles */
+            .side-panel {
+                position: fixed;
+                top: 0;
+                right: -530px;
+                width: 530px;
+                max-width: calc(100vw - 40px);
+                height: 100vh;
+                background: rgba(0, 0, 0, 0.85);
+                backdrop-filter: blur(10px);
+                z-index: 1500;
+                transition: right 0.5s ease-in-out;
+                overflow: visible;
+                padding: 20px;
+                box-shadow: -5px 0 20px rgba(0, 0, 0, 0.5);
+                box-sizing: border-box;
+            }
+            
+            .side-panel.open {
+                right: 0;
+            }
+            
+            .side-panel-toggle {
+                position: absolute;
+                left: -20px;
+                top: 50%;
+                transform: translateY(-50%);
+                width: 20px;
+                height: 40px;
+                background: rgba(0, 0, 0, 0.85);
+                backdrop-filter: blur(10px);
+                border-radius: 20px 0 0 20px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                z-index: 1501;
+                transition: all 0.3s ease;
+                box-shadow: -2px 0 10px rgba(0, 0, 0, 0.3);
+            }
+            
+            .side-panel-toggle-arrow {
+                color: rgba(255, 255, 255, 0.8);
+                font-size: 14px;
+                font-weight: bold;
+                transition: transform 0.3s ease;
+                margin-left: 2px;
+            }
+            
+            .side-panel-toggle:hover {
+                background: rgba(0, 0, 0, 0.95);
+            }
+            
+            
+            h1 {
+                font-family: "Avant Garde", Avantgarde, "Century Gothic", CenturyGothic, "AppleGothic", sans-serif;
+                font-size: 35px;
+                padding: 15px 15px;
+                text-align: center;
+                text-transform: uppercase;
+                text-rendering: optimizeLegibility;
+            }
+            h1.retroshadow {
+                color: #4caf50;
+                letter-spacing: .05em;
+                text-shadow: 
+                    3px 3px 3px #d5d5d5, 
+                    6px 6px 0px rgba(0, 0, 0, 0.2);
+            }
+            
+            .side-panel-section {
+                margin-bottom: 25px;
+                padding-bottom: 20px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            
+            .side-panel-section:last-child {
+                border-bottom: none;
+            }
+            
+            /* New Dropdown Menu Styles */
+            .sec-center {
+                position: relative;
+                max-width: 100%;
+                text-align: center;
+                z-index: 200;
+            }
+            [type="checkbox"]:checked,
+            [type="checkbox"]:not(:checked){
+                position: absolute;
+                left: -9999px;
+                opacity: 0;
+                pointer-events: none;
+            }
+            .dropdown:checked + label,
+            .dropdown:not(:checked) + label{
+                position: relative;
+                font-weight: 500;
+                font-size: 24px;
+                line-height: 2;
+                height: 50px;
+                transition: all 200ms linear;
+                border-radius: 4px;
+                width: 100%;
+                letter-spacing: 1px;
+                display: -webkit-inline-flex;
+                display: -ms-inline-flexbox;
+                display: inline-flex;
+                -webkit-align-items: center;
+                -moz-align-items: center;
+                -ms-align-items: center;
+                align-items: center;
+                -webkit-justify-content: center;
+                -moz-justify-content: center;
+                -ms-justify-content: center;
+                justify-content: center;
+                -ms-flex-pack: center;
+                text-align: center;
+                border: none;
+                background-color: #4caf50;
+                cursor: pointer;
+                color: #fff;
+                box-shadow: 0 12px 35px 0 rgba(76,175,80,.15);
+            }
+            .dropdown:checked + label span,
+            .dropdown:not(:checked) + label span {
+                color: #fff;
+            }
+            .dropdown:checked + label:before,
+            .dropdown:not(:checked) + label:before{
+                position: fixed;
+                top: 0;
+                left: 0;
+                content: '';
+                width: 100%;
+                height: 100%;
+                z-index: -1;
+                cursor: auto;
+                pointer-events: none;
+            }
+            .dropdown:checked + label:before{
+                pointer-events: auto;
+            }
+            .dropdown:not(:checked) + label span {
+                font-size: 24px;
+                margin-left: 10px;
+                transition: transform 200ms linear;
+            }
+            .dropdown:checked + label span {
+                transform: rotate(180deg);
+                font-size: 24px;
+                margin-left: 10px;
+                transition: transform 200ms linear;
+            }
+            .section-dropdown {
+                position: absolute;
+                padding: 5px;
+                background-color: rgba(0, 0, 0, 0.95);
+                top: 70px;
+                left: 0;
+                width: 100%;
+                border-radius: 4px;
+                display: block;
+                box-shadow: 0 14px 35px 0 rgba(0,0,0,0.8);
+                z-index: 2;
+                opacity: 0;
+                pointer-events: none;
+                transform: translateY(20px);
+                transition: all 200ms linear;
+            }
+            .dropdown:checked ~ .section-dropdown{
+                opacity: 1;
+                pointer-events: auto;
+                transform: translateY(0);
+            }
+            .section-dropdown:before {
+                position: absolute;
+                top: -20px;
+                left: 0;
+                width: 100%;
+                height: 20px;
+                content: '';
+                display: block;
+                z-index: 1;
+            }
+            .section-dropdown:after {
+                position: absolute;
+                top: -7px;
+                left: 30px;
+                width: 0; 
+                height: 0; 
+                border-left: 8px solid transparent;
+                border-right: 8px solid transparent; 
+                border-bottom: 8px solid rgba(0, 0, 0, 0.95);
+                content: '';
+                display: block;
+                z-index: 2;
+                transition: all 200ms linear;
+            }
+            .section-dropdown a {
+                position: relative;
+                color: #fff;
+                transition: all 200ms linear;
+                font-weight: 500;
+                font-size: 24px;
+                border-radius: 2px;
+                padding: 5px 0;
+                padding-left: 20px;
+                padding-right: 15px;
+                margin: 2px 0;
+                text-align: left;
+                text-decoration: none;
+                display: -ms-flexbox;
+                display: flex;
+                -webkit-align-items: center;
+                -moz-align-items: center;
+                -ms-align-items: center;
+                align-items: center;
+                justify-content: space-between;
+                -ms-flex-pack: distribute;
+            }
+            .section-dropdown a:hover {
+                color: #fff;
+                background-color: #4caf50;
+            }
+            .section-dropdown a.current-server {
+                color: #4caf50;
+                font-weight: bold;
+            }
+            .section-dropdown a.current-server:hover {
+                color: #fff;
+                background-color: #4caf50;
+            }
+            
+            /* Toggle Component Styles */
+            .toggle {
+                align-items: center;
+                border-radius: 100px;
+                display: flex;
+                font-weight: 700;
+                margin-bottom: 0;
+            }
+            
+            .toggle__input {
+                clip: rect(0 0 0 0);
+                clip-path: inset(50%);
+                height: 1px;
+                overflow: hidden;
+                position: absolute;
+                white-space: nowrap;
+                width: 1px;
+            }
+            
+            .toggle__input:disabled + .toggle-track {
+                cursor: not-allowed;
+                opacity: 0.7;
+            }
+            
+            .toggle-track {
+                background: rgba(255, 255, 255, 0.2);
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                border-radius: 100px;
+                cursor: pointer;
+                display: flex;
+                height: 30px;
+                margin-right: 12px;
+                position: relative;
+                width: 60px;
+                transition: all 0.3s ease;
+            }
+            
+            .toggle-indicator {
+                align-items: center;
+                background: rgba(255, 255, 255, 0.3);
+                border-radius: 24px;
+                top: 3px;
+                display: flex;
+                height: 24px;
+                justify-content: center;
+                left: 2px;
+                outline: solid 2px transparent;
+                position: absolute;
+                transition: transform 0.3s ease, background 0.3s ease;
+                width: 24px;
+            }
+            
+            .checkMark {
+                fill: #fff;
+                height: 20px;
+                width: 20px;
+                opacity: 0;
+                transition: opacity 0.3s ease-in-out;
+            }
+            
+            .toggle__input:checked + .toggle-track .toggle-indicator {
+                background: #4caf50;
+                transform: translateX(30px);
+                top: 3px;
+            }
+            
+            .toggle__input:checked + .toggle-track .checkMark {
+                opacity: 1;
+                transition: opacity 0.3s ease-in-out;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="message-box">
+            <div id="serverMessage">🎬 No Media Currently Playing<br>Awaiting Media Playback</div>
+            <div style="margin-top: 18px; font-size: 0.65em; font-style: normal;">
+                <a href="/overview" style="color: #4caf50; text-decoration: none;">Multi-server overview →</a>
+            </div>
+        </div>
+        
+        <!-- Side Panel -->
+        <div class="side-panel" id="sidePanel">
+            <!-- Side Panel Toggle Button -->
+            <div class="side-panel-toggle" onclick="toggleSidePanel()">
+                <div class="side-panel-toggle-arrow">◄</div>
+            </div>
+            
+            <div style="overflow-y: auto; height: 100%; padding-left: 15px; padding-right: 10px; padding-top: 20px;">
+                <h1 class="retroshadow">Now Playing On</h1>
+                
+                <div class="side-panel-section">
+                    <div class="sec-center">
+                        <input class="dropdown" type="checkbox" id="serverDropdown" name="serverDropdown">
+                        <label class="for-dropdown" for="serverDropdown" id="serverDropdownLabel">Select Server <span style="font-size: 24px; margin-left: 10px; transition: transform 200ms linear; color: #fff;">▼</span></label>
+                        <div class="section-dropdown">
+                            <div id="serverDropdownList"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="side-panel-section">
+                    <a href="/overview" style="color: #4caf50; text-decoration: none; font-size: 0.95em;">Multi-server overview →</a>
+                </div>
+            </div>
+        </div>
+        
+        <script>
+            let lastPlaybackState = false; // Initialize to false
+            let currentServerId = null;
+            let playbackPollInFlight = false;
+            let playbackPollTimer = null;
+            const PLAYBACK_POLL_MS = 4000;
+
+            function toggleSidePanel() {
+                const panel = document.getElementById('sidePanel');
+                const arrow = document.querySelector('.side-panel-toggle-arrow');
+                panel.classList.toggle('open');
+                if (panel.classList.contains('open')) {
+                    arrow.style.transform = 'rotate(180deg)';
+                } else {
+                    arrow.style.transform = 'rotate(0deg)';
+                }
+            }
+            
+            function serverDisplayName(server) {
+                if (!server) return '';
+                if (server.name) return server.name;
+                const label = (server.label || '').trim();
+                const ip = server.ip || '';
+                if (label && ip) return `${label} (${ip})`;
+                if (label) return label;
+                return ip || server.host || ('Server ' + server.id);
+            }
+
+            function updateServerMessage(server) {
+                const messageDiv = document.getElementById('serverMessage');
+                if (server) {
+                    const name = serverDisplayName(server);
+                    messageDiv.innerHTML = `🎬 No media playing on selected server: ${name}`;
+                } else {
+                    messageDiv.innerHTML = '🎬 No Media Currently Playing<br>Awaiting Media Playback';
+                }
+            }
+            
+            async function loadServers() {
+                try {
+                    const response = await fetch('/api/servers');
+                    const data = await response.json();
+                    
+                    if (data.servers && data.servers.length > 0) {
+                        // Get current server
+                        const currentResponse = await fetch('/api/current-server');
+                        const currentData = await currentResponse.json();
+                        
+                        if (currentData.server_id) {
+                            currentServerId = currentData.server_id;
+                        } else {
+                            // Default to first server
+                            currentServerId = data.servers[0].id;
+                            // Switch to first server if none selected
+                            await switchServerFromDropdown(data.servers[0].id);
+                            return;
+                        }
+                        
+                        // Populate new dropdown menu
+                        populateServerDropdown(data.servers, currentData.server_id || data.servers[0].id);
+                        
+                        // Update the message with server label/IP
+                        const selectedServer = data.servers.find(s => s.id === currentServerId);
+                        if (selectedServer) {
+                            updateServerMessage(selectedServer);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Failed to load servers:', error);
+                }
+            }
+            
+            function populateServerDropdown(servers, currentServerId) {
+                const dropdownList = document.getElementById('serverDropdownList');
+                const dropdownLabel = document.getElementById('serverDropdownLabel');
+                
+                if (!dropdownList || !dropdownLabel) return;
+                
+                dropdownList.innerHTML = '';
+                
+                if (servers && servers.length > 0) {
+                    servers.forEach(server => {
+                        const displayName = serverDisplayName(server);
+                        const isCurrent = server.id === currentServerId;
+                        
+                        const link = document.createElement('a');
+                        link.href = '#';
+                        link.textContent = displayName;
+                        link.dataset.serverId = server.id;
+                        link.onclick = function(e) {
+                            e.preventDefault();
+                            const serverId = parseInt(this.dataset.serverId);
+                            if (serverId && serverId !== currentServerId) {
+                                switchServerFromDropdown(serverId);
+                            }
+                            // Close dropdown
+                            document.getElementById('serverDropdown').checked = false;
+                        };
+                        
+                        if (isCurrent) {
+                            link.classList.add('current-server');
+                            dropdownLabel.innerHTML = `${displayName} <span style="font-size: 24px; margin-left: 10px; transition: transform 200ms linear; color: #fff;">▼</span>`;
+                        }
+                        
+                        dropdownList.appendChild(link);
+                    });
+                }
+            }
+            
+            async function switchServerFromDropdown(serverId) {
+                if (!serverId) return;
+                
+                try {
+                    const response = await fetch(`/api/switch-server/${serverId}`, {
+                        method: 'POST'
+                    });
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        currentServerId = serverId;
+                        
+                        // Update message with new server label/IP
+                        const serversResponse = await fetch('/api/servers');
+                        const serversData = await serversResponse.json();
+                        const selectedServer = serversData.servers.find(s => s.id === serverId);
+                        if (selectedServer) {
+                            updateServerMessage(selectedServer);
+                        }
+                        
+                        // Show loading screen then reload
+                        document.body.classList.add('fade-out');
+                        setTimeout(() => {
+                            window.location.href = '/loading';
+                        }, 500);
+                    }
+                } catch (error) {
+                    console.error('Failed to switch server:', error);
+                }
+            }
+            
+
+            function checkPlaybackChange() {
+                if (playbackPollInFlight) return;
+                playbackPollInFlight = true;
+                fetch('/poll_playback')
+                    .then(res => {
+                        if (!res.ok) {
+                            throw new Error(`HTTP ${res.status}`);
+                        }
+                        return res.json();
+                    })
+                    .then(data => {
+                        const currentState = data.playing;
+                        const isError = data.error === true;
+                        if (isError) {
+                            console.log('[DEBUG] Poll playback error flagged, skipping redirect');
+                            return;
+                        }
+                        // Only fade out and redirect if media starts playing (transitions from false to true)
+                        // Don't fade if transitioning from true to false (that would make screen dim)
+                        if (currentState === true && lastPlaybackState === false) {
+                            document.body.classList.add('fade-out');
+                            setTimeout(() => {
+                                window.location.href = '/loading';
+                            }, 1500);
+                        }
+                        lastPlaybackState = currentState;
+                    })
+                    .catch(error => {
+                        console.error('Polling error:', error);
+                    })
+                    .finally(() => {
+                        playbackPollInFlight = false;
+                    });
+            }
+            
+            // Initialize on page load
+            document.addEventListener('DOMContentLoaded', () => {
+                loadServers();
+                // Check initial state of side panel and set arrow accordingly
+                const panel = document.getElementById('sidePanel');
+                const arrow = document.querySelector('.side-panel-toggle-arrow');
+                if (panel && arrow) {
+                    if (panel.classList.contains('open')) {
+                        arrow.style.transform = 'rotate(180deg)';
+                    }
+                }
+            });
+            
+            if (playbackPollTimer) clearInterval(playbackPollTimer);
+            playbackPollTimer = setInterval(checkPlaybackChange, PLAYBACK_POLL_MS);
+        </script>
+    </body>
+    </html>

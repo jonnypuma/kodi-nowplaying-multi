@@ -48,6 +48,9 @@
         body.fade-out {
           opacity: 0;
         }
+        .content.soft-fade {
+          opacity: 0.35;
+        }
         .content {
           position: relative;
           background: rgba(0,0,0,0.5);
@@ -58,6 +61,7 @@
           display: flex;
           gap: 40px;
           color: white;
+          transition: opacity 0.28s ease;
           text-shadow:
             -1px -1px 0 rgba(0,0,0,0.95),
              0   -1px 0 rgba(0,0,0,0.95),
@@ -135,7 +139,7 @@
           background: linear-gradient(135deg, #4caf50 0%, #45a049 50%, #4caf50 100%);
           height: 20px;
           border-radius: 15px 3px 3px 15px;
-          width: {{ percent }}%;
+          width: 0%;
           transition: width 0.5s;
           position: relative;
           box-shadow: 
@@ -947,16 +951,31 @@
           background-color: #4caf50;
         }
       </style>
+      <script type="application/json" id="np-bootstrap">{"elapsed":{{ elapsed }},"duration":{{ duration }},"paused":{{ paused_js }},"percent":{{ percent }},"identity":{{ soft_identity_json|safe }}}</script>
       <script>
-        let elapsed = {{ elapsed }};
-        let duration = {{ duration }};
-        let paused = {{ paused_js }};
+        const __np = JSON.parse(document.getElementById('np-bootstrap').textContent);
+        let elapsed = __np.elapsed;
+        let duration = __np.duration;
+        let paused = __np.paused;
         let lastPlaybackState = null;
         let noPlayCount = 0;
+        let softUpdateInFlight = false;
         let redirectingToIdle = false;
         let playbackPollInFlight = false;
         let playbackPollTimer = null;
+        window.SOFT_IDENTITY = __np.identity || {};
         const PLAYBACK_POLL_MS = 4000;
+        (function initProgressBar() {
+          function apply() {
+            const bar = document.querySelector('.progress .bar') || document.querySelector('.bar');
+            if (bar && typeof __np.percent === 'number') bar.style.width = __np.percent + '%';
+          }
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', apply);
+          } else {
+            apply();
+          }
+        })();
         
         // Function to attach expandable functionality to a badge
         function attachExpandableHandler(badge) {
@@ -1392,7 +1411,7 @@
                 noPlayCount += 1;
               }
 
-              if (isNotPlaying && noPlayCount >= 4 && !redirectingToIdle) {
+              if (isNotPlaying && noPlayCount >= 2 && !redirectingToIdle) {
                 redirectingToIdle = true;
                 console.log('[DEBUG] Redirecting to idle after debounce');
                 document.body.classList.add('fade-out');
@@ -1438,10 +1457,7 @@
               // Check for item change (new track/episode while playing)
               else if (currentState && currentItemId && lastItemId && currentItemId !== lastItemId) {
                 console.log(`[DEBUG] Item changed from ${lastItemId} to ${currentItemId}`);
-                document.body.classList.add('fade-out');
-                setTimeout(() => {
-                  window.location.href = '/loading'; // Show loading screen then reload
-                }, 800);
+                attemptSoftUpdate(currentItemId);
               }
               
               // Always update tracking variables at the end
@@ -1453,6 +1469,122 @@
             })
             .finally(() => {
               playbackPollInFlight = false;
+            });
+        }
+
+        function hardReloadNowPlaying() {
+          document.body.classList.add('fade-out');
+          setTimeout(() => {
+            window.location.href = '/loading';
+          }, 800);
+        }
+
+        function setBadge(id, text) {
+          const el = document.getElementById(id);
+          if (!el) return;
+          if (text) {
+            el.textContent = text;
+            el.style.display = '';
+          } else {
+            el.textContent = '';
+            el.style.display = 'none';
+          }
+        }
+
+        function applyEpisodeSoftUpdate(data) {
+          const content = document.querySelector('.content') || document.body;
+          content.classList.add('soft-fade');
+          setTimeout(() => {
+            setBadge('soft-badge-season', (data.badges && data.badges.season) || '');
+            setBadge('soft-badge-episode', (data.badges && data.badges.episode) || '');
+            setBadge('soft-badge-title', (data.badges && data.badges.title) || '');
+
+            const plotWrap = document.getElementById('soft-plot');
+            const plotText = document.getElementById('soft-plot-text');
+            if (plotWrap && plotText) {
+              if (data.plot) {
+                plotText.textContent = data.plot;
+                plotWrap.style.display = '';
+              } else {
+                plotText.textContent = '';
+                plotWrap.style.display = 'none';
+              }
+            }
+
+            if (data.season_changed && data.art && data.art.season_poster) {
+              const seasonImg = document.getElementById('soft-season-poster');
+              if (seasonImg) {
+                seasonImg.src = data.art.season_poster;
+                seasonImg.style.display = '';
+              }
+            }
+
+            if (typeof data.elapsed === 'number' && typeof data.duration === 'number') {
+              if (typeof window.applySoftProgress === 'function') {
+                window.applySoftProgress(data.elapsed, data.duration, !!data.paused);
+              } else {
+                const bar = document.querySelector('.progress .bar');
+                const timeDisplay = document.getElementById('time-display');
+                const pct = data.duration > 0 ? Math.min(100, (data.elapsed / data.duration) * 100) : 0;
+                if (bar) bar.style.width = pct + '%';
+                if (timeDisplay) {
+                  const btn = timeDisplay.querySelector('#playback-button');
+                  const btnHtml = btn ? btn.outerHTML : '';
+                  const fmt = (s) => {
+                    s = Math.max(0, Math.floor(s || 0));
+                    const h = Math.floor(s / 3600);
+                    const m = Math.floor((s % 3600) / 60);
+                    const sec = s % 60;
+                    if (h > 0) return h + ':' + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+                    return String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+                  };
+                  timeDisplay.innerHTML = btnHtml + ' ' + fmt(data.elapsed) + ' / ' + fmt(data.duration);
+                }
+                if (typeof elapsed !== 'undefined') elapsed = data.elapsed;
+                if (typeof duration !== 'undefined') duration = data.duration;
+                if (typeof paused !== 'undefined') paused = !!data.paused;
+              }
+            }
+
+            if (data.identity) {
+              window.SOFT_IDENTITY = data.identity;
+            }
+            if (data.item_id) {
+              lastItemId = data.item_id;
+            }
+            content.classList.remove('soft-fade');
+          }, 280);
+        }
+
+        function attemptSoftUpdate(newItemId) {
+          if (softUpdateInFlight) return;
+          softUpdateInFlight = true;
+          const id = window.SOFT_IDENTITY || {};
+          const params = new URLSearchParams({
+            prev_type: id.media_type || 'episode',
+            prev_item_id: id.item_id || lastItemId || '',
+            prev_tvshow_id: id.tvshow_id != null ? String(id.tvshow_id) : '',
+            prev_season: id.season != null ? String(id.season) : '',
+            prev_album_id: '',
+            prev_artist_id: '',
+          });
+          fetch('/api/nowplaying-soft-update?' + params.toString())
+            .then((res) => res.json())
+            .then((data) => {
+              if (data && data.soft) {
+                console.log('[DEBUG] Soft-updating episode in place', data.item_id || newItemId);
+                applyEpisodeSoftUpdate(data);
+              } else {
+                console.log('[DEBUG] Soft update not eligible, hard reload', data && data.reason);
+                hardReloadNowPlaying();
+              }
+            })
+            .catch((err) => {
+              console.error('Soft update failed, hard reload', err);
+              hardReloadNowPlaying();
+            })
+            .finally(() => {
+              softUpdateInFlight = false;
             });
         }
 
@@ -1685,15 +1817,19 @@
             const response = await fetch('/api/preferences');
             if (response.ok) {
               const prefs = await response.json();
-              // Merge with localStorage as fallback
+              const pick = (key, fallback) =>
+                Object.prototype.hasOwnProperty.call(prefs, key) && prefs[key] != null && prefs[key] !== ''
+                  ? String(prefs[key])
+                  : (localStorage.getItem(key) || fallback);
+              // Server wins when key exists (including "disabled"); localStorage only fills gaps
               return {
-                blurPreference: prefs.blurPreference || localStorage.getItem('blurPreference') || 'blurred',
-                blurAmount: prefs.blurAmount || localStorage.getItem('blurAmount') || '50',
-                overlayPreference: prefs.overlayPreference || localStorage.getItem('overlayPreference') || 'enabled',
-                overlayOpacity: prefs.overlayOpacity || localStorage.getItem('overlayOpacity') || '85',
-                marqueeInterval: prefs.marqueeInterval || localStorage.getItem('marqueeInterval') || '10',
-                fanartInterval: prefs.fanartInterval || localStorage.getItem('fanartInterval') || '20',
-                fanartMinSizeKB: prefs.fanartMinSizeKB || localStorage.getItem('fanartMinSizeKB') || '200',
+                blurPreference: pick('blurPreference', 'blurred'),
+                blurAmount: pick('blurAmount', '50'),
+                overlayPreference: pick('overlayPreference', 'enabled'),
+                overlayOpacity: pick('overlayOpacity', '85'),
+                marqueeInterval: pick('marqueeInterval', '10'),
+                fanartInterval: pick('fanartInterval', '20'),
+                fanartMinSizeKB: pick('fanartMinSizeKB', '200'),
                 _server: prefs
               };
             }
@@ -1728,6 +1864,23 @@
             }
           } catch (error) {
             console.log(`[DEBUG] Error saving preference ${key} to server:`, error);
+          }
+        }
+
+        async function savePreferencesBatch(updates) {
+          if (!updates || !Object.keys(updates).length) return;
+          Object.entries(updates).forEach(([key, value]) => localStorage.setItem(key, value));
+          try {
+            const response = await fetch('/api/preferences', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updates)
+            });
+            if (!response.ok) {
+              console.log('[DEBUG] Failed to batch-save preferences to server');
+            }
+          } catch (error) {
+            console.log('[DEBUG] Error batch-saving preferences:', error);
           }
         }
         
@@ -1813,7 +1966,7 @@
           savePreference('overlayOpacity', opacityValue.toString());
         }
         
-        function updateMarqueeInterval(value) {
+        function updateMarqueeInterval(value, persist = true) {
           const intervalValue = parseInt(value);
           document.getElementById('marqueeIntervalValue').textContent = intervalValue + 's';
           
@@ -1842,10 +1995,12 @@
             }
           }, intervalValue * 1000);
           
-          savePreference('marqueeInterval', intervalValue.toString());
+          if (persist) {
+            savePreference('marqueeInterval', intervalValue.toString());
+          }
         }
         
-        function updateFanartInterval(value) {
+        function updateFanartInterval(value, persist = true) {
           const intervalValue = parseInt(value);
           document.getElementById('fanartIntervalValue').textContent = intervalValue + 's';
           
@@ -1860,13 +2015,17 @@
             fanartInterval = setInterval(cycleFanarts, intervalValue * 1000);
           }
           
-          savePreference('fanartInterval', intervalValue.toString());
+          if (persist) {
+            savePreference('fanartInterval', intervalValue.toString());
+          }
         }
 
-        function updateFanartMinSize(value) {
+        function updateFanartMinSize(value, persist = true) {
           const sizeValue = parseInt(value);
           document.getElementById('fanartMinSizeValue').textContent = sizeValue + 'kB';
-          savePreference('fanartMinSizeKB', sizeValue.toString());
+          if (persist) {
+            savePreference('fanartMinSizeKB', sizeValue.toString());
+          }
         }
         
         async function initializeBlurToggle() {
@@ -1910,7 +2069,8 @@
             document.getElementById('blurValue').textContent = savedBlurAmount + '%';
           }
 
-          // Sync prefs to server if missing there
+          // Sync missing prefs to server in one request (avoid concurrent POST races)
+          const missing = {};
           const prefKeys = [
             ['blurPreference', savedBlurPreference],
             ['blurAmount', savedBlurAmount],
@@ -1922,9 +2082,12 @@
           ];
           prefKeys.forEach(([key, value]) => {
             if (!Object.prototype.hasOwnProperty.call(serverPrefs, key)) {
-              savePreference(key, value);
+              missing[key] = value;
             }
           });
+          if (Object.keys(missing).length) {
+            savePreferencesBatch(missing);
+          }
           
           // Initialize overlay toggle
           if (savedOverlayPreference === 'enabled') {
@@ -1946,19 +2109,19 @@
             document.getElementById('opacityValue').textContent = savedOpacity + '%';
           }
           
-          // Initialize intervals
+          // Initialize intervals (persist=false so page load does not rewrite preferences)
           if (document.getElementById('marqueeIntervalSlider')) {
-            updateMarqueeInterval(savedMarqueeInterval);
+            updateMarqueeInterval(savedMarqueeInterval, false);
             document.getElementById('marqueeIntervalSlider').value = savedMarqueeInterval;
           }
           
           if (document.getElementById('fanartIntervalSlider')) {
-            updateFanartInterval(savedFanartInterval);
+            updateFanartInterval(savedFanartInterval, false);
             document.getElementById('fanartIntervalSlider').value = savedFanartInterval;
           }
 
           if (document.getElementById('fanartMinSizeSlider')) {
-            updateFanartMinSize(savedFanartMinSize);
+            updateFanartMinSize(savedFanartMinSize, false);
             document.getElementById('fanartMinSizeSlider').value = savedFanartMinSize;
           }
         }
@@ -2063,12 +2226,12 @@
           
           // Restore intervals
           if (document.getElementById('marqueeIntervalSlider')) {
-            updateMarqueeInterval(savedMarqueeInterval);
+            updateMarqueeInterval(savedMarqueeInterval, false);
             document.getElementById('marqueeIntervalSlider').value = savedMarqueeInterval;
           }
           
           if (document.getElementById('fanartIntervalSlider')) {
-            updateFanartInterval(savedFanartInterval);
+            updateFanartInterval(savedFanartInterval, false);
             document.getElementById('fanartIntervalSlider').value = savedFanartInterval;
           }
           
@@ -2214,7 +2377,7 @@
               </span>
               <div class="progress-container">
                 <div class="progress">
-                  <div class="bar"></div>
+                  <div class="bar" style="width: {{ percent }}%;"></div>
                 </div>
               </div>
             </div>
@@ -2271,7 +2434,7 @@
             <div class="side-panel-row">
               <label>Toggle overlay:</label>
               <label class="toggle">
-                <input type="checkbox" class="toggle__input" id="overlayToggle" onchange="toggleOverlay()">
+                <input type="checkbox" class="toggle__input" id="overlayToggle" checked onchange="toggleOverlay()">
                 <span class="toggle-track">
                   <span class="toggle-indicator">
                     <svg class="checkMark" viewBox="0 0 20 20">

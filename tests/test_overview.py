@@ -31,6 +31,40 @@ def test_format_overview_title_movie(app_module):
     assert title == "Inception"
 
 
+def test_probe_playback_fingerprint_uses_overview_title(app_module, patch_into):
+    """Regression: cache probe must import _format_overview_title (post-refactor)."""
+    app_module.server_backoff.clear()
+
+    def fake_rpc(method, params=None, server_id=None):
+        if method == "Player.GetActivePlayers":
+            return {"result": [{"playerid": 1}]}
+        if method == "Player.GetItem":
+            return {
+                "result": {
+                    "item": {
+                        "type": "episode",
+                        "id": 9,
+                        "title": "Pilot",
+                        "showtitle": "Demo",
+                        "season": 1,
+                        "episode": 1,
+                        "file": "/tv/demo/s01e01.mkv",
+                    }
+                }
+            }
+        if method == "Player.GetProperties":
+            return {"result": {"speed": 1}}
+        return {"result": {}}
+
+    patch_into(app_module, "kodi_rpc", fake_rpc)
+    probe = app_module.probe_playback_fingerprint(1)
+    assert probe["connected"] is True
+    assert probe["playing"] is True
+    assert probe["media_type"] == "episode"
+    assert "Demo" in probe["title"]
+    assert "S01E01" in probe["title"]
+
+
 def test_overview_page_renders(client):
     response = client.get("/overview")
     assert response.status_code == 200
@@ -39,7 +73,7 @@ def test_overview_page_renders(client):
     assert b"/api/retry-server/" in response.data
 
 
-def test_api_overview_with_mocked_status(client, app_module, monkeypatch):
+def test_api_overview_with_mocked_status(client, app_module, patch_into):
     app_module.nowplaying_cache.clear()
     app_module.server_backoff.clear()
     app_module.KODI_SERVERS = {
@@ -61,7 +95,9 @@ def test_api_overview_with_mocked_status(client, app_module, monkeypatch):
             "error": None,
         }
 
-    monkeypatch.setattr(app_module, "get_server_overview_status", fake_status)
+    patch_into(app_module, "get_server_overview_status", fake_status)
+    # Force live probe path (no warm cache)
+    patch_into(app_module, "overview_from_cache", lambda _sid: None)
     response = client.get("/api/overview")
     assert response.status_code == 200
     data = response.get_json()
@@ -70,7 +106,7 @@ def test_api_overview_with_mocked_status(client, app_module, monkeypatch):
     assert "backoff_remaining" in data["servers"][0]
 
 
-def test_api_retry_server_clears_backoff(client, app_module, monkeypatch):
+def test_api_retry_server_clears_backoff(client, app_module, patch_into):
     app_module.nowplaying_cache.clear()
     app_module.server_backoff.clear()
     app_module.KODI_SERVERS = {
@@ -86,7 +122,7 @@ def test_api_retry_server_clears_backoff(client, app_module, monkeypatch):
         refreshed["n"] += 1
         app_module.clear_cache_playback(server_id, {"connected": True, "error": None})
 
-    monkeypatch.setattr(app_module, "refresh_server_cache", fake_refresh)
+    patch_into(app_module, "refresh_server_cache", fake_refresh)
     response = client.post("/api/retry-server/1")
     assert response.status_code == 200
     data = response.get_json()

@@ -2,6 +2,7 @@
 TV Episode-specific HTML generation for Kodi Now Playing application.
 Handles TV episode display with show poster, season poster, and episode information.
 """
+import json
 import logging
 from html import escape
 from flask import render_template
@@ -171,17 +172,8 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     enhanced_video_info = {}
     player_id = 1  # Default, will be updated if we can get active player
     try:
-        # Import the kodi_rpc function from the main module
-        import sys
-        import os
-        import importlib.util
-        
-        # Load the kodi-nowplaying.py module (with hyphen)
-        spec = importlib.util.spec_from_file_location("kodi_nowplaying", "kodi-nowplaying.py")
-        kodi_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(kodi_module)
-        kodi_rpc = kodi_module.kodi_rpc
-        
+        from kodi_np.rpc import kodi_rpc
+
         # Get active player ID
         try:
             active_players_response = kodi_rpc("Player.GetActivePlayers", {}, server_id=active_server_id)
@@ -357,17 +349,8 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         tvshowid = item.get("tvshowid")
         if tvshowid:
             try:
-                # Import kodi_rpc function
-                import sys
-                import os
-                import importlib.util
-                
-                # Load the kodi-nowplaying.py module (with hyphen)
-                spec = importlib.util.spec_from_file_location("kodi_nowplaying", "kodi-nowplaying.py")
-                kodi_module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(kodi_module)
-                kodi_rpc = kodi_module.kodi_rpc
-                
+                from kodi_np.rpc import kodi_rpc
+
                 tvshow_response = kodi_rpc("VideoLibrary.GetTVShowDetails", {
                     "tvshowid": tvshowid,
                     "properties": ["studio"]
@@ -504,10 +487,10 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         else ""
     )
     show_poster_html = (
-        f"<img class='show-poster' src='{show_poster_url}' />" if show_poster_url else ""
+        f"<img class='show-poster' id='soft-show-poster' src='{show_poster_url}' />" if show_poster_url else "<img class='show-poster' id='soft-show-poster' style='display:none' src='' />"
     )
     season_poster_html = (
-        f"<img class='season-poster' src='{season_poster_url}' />" if season_poster_url else ""
+        f"<img class='season-poster' id='soft-season-poster' src='{season_poster_url}' />" if season_poster_url else "<img class='season-poster' id='soft-season-poster' style='display:none' src='' />"
     )
     if clearlogo_url:
         title_banner_html = f"<img class='logo' src='{clearlogo_url}' />"
@@ -526,13 +509,13 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         else ""
     )
     season_badge_html = (
-        f"<span class='badge episode-badge'>{season_badge}</span>" if season_badge else ""
+        f"<span class='badge episode-badge' id='soft-badge-season'>{season_badge}</span>" if season_badge else "<span class='badge episode-badge' id='soft-badge-season' style='display:none'></span>"
     )
     episode_badge_html = (
-        f"<span class='badge episode-badge'>{episode_badge}</span>" if episode_badge else ""
+        f"<span class='badge episode-badge' id='soft-badge-episode'>{episode_badge}</span>" if episode_badge else "<span class='badge episode-badge' id='soft-badge-episode' style='display:none'></span>"
     )
     title_badge_html = (
-        f"<span class='badge episode-badge'>{title_badge}</span>" if title_badge else ""
+        f"<span class='badge episode-badge' id='soft-badge-title'>{title_badge}</span>" if title_badge else "<span class='badge episode-badge' id='soft-badge-title' style='display:none'></span>"
     )
     release_year_html = f"<p><strong>Year:</strong> {release_year}</p>" if release_year else ""
     director_html = (
@@ -546,9 +529,9 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         else ""
     )
     plot_html = (
-        f"<h3 style='margin-top:20px;'>Plot</h3><p style='max-width:600px;'>{plot}</p>"
+        f"<div id='soft-plot'><h3 style='margin-top:20px;'>Plot</h3><p id='soft-plot-text' style='max-width:600px;'>{plot}</p></div>"
         if plot and plot.strip()
-        else ""
+        else "<div id='soft-plot' style='display:none'><h3 style='margin-top:20px;'>Plot</h3><p id='soft-plot-text' style='max-width:600px;'></p></div>"
     )
     imdb_badge_html = (
         f'<a href="{imdb_url}" target="_blank" class="badge-imdb"><span>IMDb</span></a>'
@@ -568,6 +551,15 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     elapsed_display = _format_playback_time(elapsed, duration)
     duration_display = _format_playback_time(duration, duration)
     paused_js = str(paused).lower()
+    soft_identity = {
+        "media_type": "episode",
+        "item_id": f"episode_{item.get('id')}" if item.get("id") is not None else "",
+        "tvshow_id": item.get("tvshowid"),
+        "season": season,
+        "album_id": None,
+        "artist_id": None,
+    }
+    soft_identity_json = json.dumps(soft_identity)
 
     return render_template(
         "episode_nowplaying.html",
@@ -607,5 +599,6 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         genre_badges_html=genre_badges_html,
         elapsed_display=elapsed_display,
         duration_display=duration_display,
+        soft_identity_json=soft_identity_json,
     )
 

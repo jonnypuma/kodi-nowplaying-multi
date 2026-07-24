@@ -57,6 +57,9 @@ def test_store_and_serve_cached_nowplaying(client, app_module):
     content = client.get(f"/nowplaying-content/{start['job_id']}")
     assert content.status_code == 200
     assert b"Cached NP" in content.data
+    second = client.get(f"/nowplaying-content/{start['job_id']}")
+    assert second.status_code == 410
+    assert b"already consumed" in second.data
 
 
 def test_clear_cache_playback_marks_idle(app_module):

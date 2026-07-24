@@ -6,6 +6,7 @@ COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY kodi-nowplaying.py parser.py logging_config.py movie_nowplaying.py episode_nowplaying.py music_nowplaying.py favicon.ico play-button.png pause-button.png /app/
+COPY kodi_np/ /app/kodi_np/
 COPY templates/ /app/templates/
 
 RUN mkdir -p /app/tmp /app/preferences

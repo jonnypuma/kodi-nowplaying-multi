@@ -151,17 +151,8 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     enhanced_video_info = {}
     player_id = 1  # Default, will be updated if we can get active player
     try:
-        # Import the kodi_rpc function from the main module
-        import sys
-        import os
-        import importlib.util
-        
-        # Load the kodi-nowplaying.py module (with hyphen)
-        spec = importlib.util.spec_from_file_location("kodi_nowplaying", "kodi-nowplaying.py")
-        kodi_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(kodi_module)
-        kodi_rpc = kodi_module.kodi_rpc
-        
+        from kodi_np.rpc import kodi_rpc
+
         # Get active player ID
         try:
             active_players_response = kodi_rpc("Player.GetActivePlayers", {})

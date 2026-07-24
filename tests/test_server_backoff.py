@@ -1,3 +1,12 @@
+def test_read_timeout_does_not_enter_backoff(app_module):
+    app_module.server_backoff.clear()
+    app_module.SERVER_FAIL_BACKOFF_AFTER = 1
+    assert app_module.note_server_rpc_failure(
+        1, "HTTPConnectionPool(host='192.168.0.19', port=6666): Read timed out. (read timeout=5.0)"
+    ) is False
+    assert app_module.server_backoff_remaining(1) == 0
+
+
 def test_server_backoff_after_three_failures(app_module):
     app_module.server_backoff.clear()
     app_module.SERVER_FAIL_BACKOFF_AFTER = 3
@@ -47,7 +56,7 @@ def test_kodi_rpc_skips_during_backoff(app_module, monkeypatch):
     assert called["n"] == 0
 
 
-def test_refresh_skips_backed_off_server(app_module, monkeypatch):
+def test_refresh_skips_backed_off_server(app_module, patch_into):
     app_module.server_backoff.clear()
     app_module.nowplaying_cache.clear()
     app_module.KODI_SERVERS = {
@@ -62,6 +71,6 @@ def test_refresh_skips_backed_off_server(app_module, monkeypatch):
         probed["n"] += 1
         raise AssertionError("should not probe during backoff")
 
-    monkeypatch.setattr(app_module, "probe_playback_fingerprint", boom)
+    patch_into(app_module, "probe_playback_fingerprint", boom)
     app_module.refresh_server_cache(1)
     assert probed["n"] == 0
