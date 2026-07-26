@@ -380,9 +380,30 @@ def ensure_share_file(server_id, scope, identity, art_key, source_path, session_
 
 
 def pick_thumb_filename(downloaded_art):
+    """Return preferred overview tile image filename, or None."""
+    picked = pick_thumb_art(downloaded_art)
+    return picked[0] if picked else None
+
+
+def pick_thumb_art(downloaded_art):
+    """Return (filename, art_key) for overview tile primary art."""
     if not isinstance(downloaded_art, dict):
         return None
     for key in _c.THUMB_ART_PRIORITY:
+        filename = downloaded_art.get(key)
+        if filename:
+            return filename, key
+    for key, filename in downloaded_art.items():
+        if filename and str(key).startswith("fanart"):
+            return filename, key
+    return None
+
+
+def pick_fanart_filename(downloaded_art):
+    """Primary fanart file for overview banner backgrounds."""
+    if not isinstance(downloaded_art, dict):
+        return None
+    for key in ("fanart", "fanart1", "fanart2", "fanart3", "extrafanart_main"):
         filename = downloaded_art.get(key)
         if filename:
             return filename
@@ -402,6 +423,9 @@ def cached_art_filenames():
             thumb = entry.get("thumb_file")
             if thumb:
                 protected.add(thumb)
+            fanart = entry.get("fanart_file")
+            if fanart:
+                protected.add(fanart)
             share = entry.get("share") or {}
             for bucket_files in (share.get("art_files") or {}).values():
                 if isinstance(bucket_files, dict):

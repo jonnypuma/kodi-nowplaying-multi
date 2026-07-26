@@ -1,10 +1,10 @@
 {
   "overlayOpacity": "72",
-  "blurPreference": "blurred",
+  "blurPreference": "non-blurred",
   "blurAmount": "71",
   "marqueeInterval": "14",
   "fanartInterval": "12",
-  "overlayPreference": "disabled",
+  "overlayPreference": "enabled",
   "active_server_id": 3,
   "fanartMinSizeKB": "55"
 }

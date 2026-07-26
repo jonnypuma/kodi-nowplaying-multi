@@ -13,6 +13,8 @@ from kodi_np.art import (
     cached_art_filenames,
     cleanup_old_artwork_files,
     empty_share,
+    pick_fanart_filename,
+    pick_thumb_art,
     pick_thumb_filename,
 )
 from kodi_np.rpc import (
@@ -84,6 +86,9 @@ def clear_cache_playback(server_id, status=None):
         "art_files": [],
         "thumb_file": None,
         "thumb": None,
+        "thumb_is_banner": False,
+        "fanart_file": None,
+        "fanart": None,
         "cache_ready": False,
     }
     if status:
@@ -97,7 +102,10 @@ def store_playing_cache(server_id, payload, status=None):
     server = _c.KODI_SERVERS.get(server_id) or {}
     downloaded_art = payload.get("downloaded_art") or {}
     art_files = [name for name in downloaded_art.values() if name]
-    thumb_file = pick_thumb_filename(downloaded_art)
+    thumb_pick = pick_thumb_art(downloaded_art)
+    thumb_file = thumb_pick[0] if thumb_pick else None
+    thumb_key = thumb_pick[1] if thumb_pick else None
+    fanart_file = pick_fanart_filename(downloaded_art)
     title = payload.get("title")
     media_type = payload.get("media_type")
     if status and status.get("title"):
@@ -122,6 +130,9 @@ def store_playing_cache(server_id, payload, status=None):
         art_files=art_files,
         thumb_file=thumb_file,
         thumb=f"/media/{thumb_file}" if thumb_file else None,
+        thumb_is_banner=(thumb_key == "banner"),
+        fanart_file=fanart_file,
+        fanart=f"/media/{fanart_file}" if fanart_file else None,
         cache_ready=bool(payload.get("html")),
     )
     if "share" in payload and payload.get("share") is not None:
@@ -147,6 +158,8 @@ def overview_from_cache(server_id):
         "media_type": entry.get("media_type"),
         "error": entry.get("error"),
         "thumb": entry.get("thumb"),
+        "thumb_is_banner": bool(entry.get("thumb_is_banner")),
+        "fanart": entry.get("fanart") if entry.get("thumb_is_banner") else None,
         "cache_ready": bool(entry.get("cache_ready") and entry.get("html")),
         "backoff_remaining": remaining,
     }

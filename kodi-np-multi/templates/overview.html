@@ -3,7 +3,7 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Kodi Overview</title>
+        <title>Kodi Now Playing Overview</title>
         <style>
             :root {
                 --bg0: #141414;
@@ -29,11 +29,16 @@
             }
             h1 {
                 margin: 0;
-                font-size: clamp(1.4rem, 2.5vw, 2rem);
-                letter-spacing: 0.06em;
+                font-family: 'Arial Black', Arial, sans-serif;
+                font-size: clamp(1.35rem, 3vw, 2.15rem);
+                letter-spacing: 0.12em;
                 text-transform: uppercase;
-                color: var(--green);
-                text-shadow: 2px 2px 0 rgba(0,0,0,0.35);
+                background: linear-gradient(90deg, #ff6b35, #f7931e 40%, #4caf50);
+                -webkit-background-clip: text;
+                background-clip: text;
+                color: transparent;
+                filter: drop-shadow(0 0 12px rgba(255, 107, 53, 0.35))
+                        drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.45));
             }
             #grid {
                 display: grid;
@@ -66,20 +71,39 @@
                 background: rgba(0,0,0,0.7);
             }
             .tile-art {
+                position: relative;
                 margin: -20px -18px 4px;
-                height: 140px;
+                aspect-ratio: 16 / 9;
+                height: auto;
                 background: rgba(0,0,0,0.45);
                 overflow: hidden;
-                display: flex;
-                align-items: center;
-                justify-content: center;
+            }
+            .tile-art-bg {
+                position: absolute;
+                inset: 0;
+                background-size: cover;
+                background-position: center;
+                background-repeat: no-repeat;
+            }
+            .tile-art-dim {
+                position: absolute;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.45);
             }
             .tile-art img {
+                position: relative;
+                z-index: 1;
                 width: 100%;
                 height: 100%;
+                display: block;
+            }
+            .tile-art img.tile-art-banner {
                 object-fit: contain;
                 object-position: center;
-                display: block;
+            }
+            .tile-art img.tile-art-fill {
+                object-fit: cover;
+                object-position: center;
             }
             .tile-ip { font-size: 1.15rem; font-weight: 600; letter-spacing: 0.03em; }
             .tile-host { color: var(--muted); font-size: 0.85rem; word-break: break-all; }
@@ -141,7 +165,7 @@
     </head>
     <body>
         <header>
-            <h1>Kodi Overview</h1>
+            <h1>Kodi Now Playing Overview</h1>
         </header>
         <div id="grid"><div class="empty">Loading servers…</div></div>
         <footer id="updated">Refreshing every 5 seconds</footer>
@@ -213,12 +237,21 @@
 
             function serverDisplayName(server) {
                 if (!server) return '';
-                if (server.name) return server.name;
                 const label = (server.label || '').trim();
-                const ip = server.ip || '';
-                if (label && ip) return label + ' (' + ip + ')';
                 if (label) return label;
-                return ip || server.host || ('Server ' + server.id);
+                return server.ip || server.host || ('Server ' + server.id);
+            }
+
+            function tileArtHtml(server) {
+                if (!server.thumb) return '';
+                if (server.thumb_is_banner) {
+                    const bg = server.fanart
+                        ? '<div class="tile-art-bg" style="background-image:url(\'' + server.fanart + '\')"></div><div class="tile-art-dim"></div>'
+                        : '';
+                    return '<div class="tile-art">' + bg +
+                        '<img class="tile-art-banner" src="' + server.thumb + '" alt=""></div>';
+                }
+                return '<div class="tile-art"><img class="tile-art-fill" src="' + server.thumb + '" alt=""></div>';
             }
 
             function render(servers) {
@@ -234,9 +267,7 @@
                     const subtitle = server.host || '';
                     const title = statusTitle(server);
                     const needsRetry = !server.connected || !!server.error || (server.backoff_remaining > 0);
-                    const artHtml = server.thumb
-                        ? '<div class="tile-art"><img src="' + server.thumb + '" alt=""></div>'
-                        : '';
+                    const artHtml = tileArtHtml(server);
                     const readyHtml = server.cache_ready
                         ? '<div class="tile-ready">Ready · instant open</div>'
                         : '';
