@@ -7,6 +7,8 @@ import logging
 from html import escape
 from flask import render_template
 
+from kodi_np.codecs import format_audio_codec, format_hdr_label
+
 logger = logging.getLogger(__name__)
 
 
@@ -204,50 +206,6 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     album_details = details.get("album", {}) if isinstance(details, dict) else {}
     total_discs = album_details.get("totaldiscs", 1)
     
-    def format_hdr_label(value: str) -> str:
-        raw = (value or "").strip()
-        if not raw:
-            return "SDR"
-        key = raw.replace(" ", "").replace("_", "").upper()
-        mapping = {
-            "DOLBYVISION": "Dolby Vision",
-            "HDR10PLUS": "HDR10+",
-            "HDR10": "HDR10",
-            "HLG": "HLG",
-            "SDR": "SDR"
-        }
-        if key in mapping:
-            return mapping[key]
-        return raw.replace("_", " ").title().replace("Hdr", "HDR").replace("Sdr", "SDR").replace("Hlg", "HLG")
-
-    def format_audio_codec(value: str) -> str:
-        raw = (value or "").strip()
-        if not raw:
-            return "Unknown"
-        key = raw.replace(" ", "").replace("_", "").upper()
-        mapping = {
-            "TRUEHDATMOS": "TrueHD Atmos",
-            "TRUEHD": "TrueHD",
-            "DTSHDMA": "DTS-HD MA",
-            "DTSHD": "DTS-HD",
-            "DTSX": "DTS:X",
-            "DTS": "DTS",
-            "EAC3": "E-AC3",
-            "AC3": "AC3",
-            "AAC": "AAC",
-            "FLAC": "FLAC",
-            "PCM": "PCM",
-            "LPCM": "LPCM",
-            "OPUS": "Opus",
-            "VORBIS": "Vorbis",
-            "MP3": "MP3",
-            "WMA": "WMA",
-            "ALAC": "ALAC"
-        }
-        if key in mapping:
-            return mapping[key]
-        return raw.replace("_", " ").title()
-
     # Create music badge components
     # Only show disc badge if album has 2 or more discs
     disc_badge = f"Disc {song_disc}" if song_disc > 0 and total_discs >= 2 else ""
