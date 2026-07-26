@@ -1,6 +1,4 @@
-This is a script to be run as a Docker container.
-
-It provides a html page showing what a Kodi device is playing and displays artwork, progress bar, media information, plot etc with background slideshow if more than one fanart is found.
+This is a Docker container application whcihc provides a html page showing what a Kodi device is playing and displays artwork, progress bar, media information, plot etc with background slideshow if more than one fanart is found.
 
 <img width="2553" height="1371" alt="image" src="https://github.com/user-attachments/assets/ccccf224-4ba6-4922-98a7-737c16b230cc" />
 

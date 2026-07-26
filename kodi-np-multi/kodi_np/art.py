@@ -789,10 +789,16 @@ def _prepare_and_download_art_locked(item, session_id, server, progress_cb=None,
 
                                 if file_type == "file" and file_path:
                                     base_name = os.path.basename(file_path).lower()
-                                    if base_name in ("clearlogo.png", "clearlogo.jpg", "clearlogo.jpeg", "clearlogo.webp"):
-                                        if not art_map.get("clearlogo"):
-                                            art_map["clearlogo"] = file_path
-                                            logger.debug(f"Added clearlogo from media dir: {file_path}")
+                                    stem_map = {
+                                        "clearlogo": ("clearlogo.png", "clearlogo.jpg", "clearlogo.jpeg", "clearlogo.webp"),
+                                        "banner": ("banner.png", "banner.jpg", "banner.jpeg", "banner.webp"),
+                                        "landscape": ("landscape.png", "landscape.jpg", "landscape.jpeg", "landscape.webp"),
+                                        "clearart": ("clearart.png", "clearart.jpg", "clearart.jpeg", "clearart.webp"),
+                                    }
+                                    for art_key, names in stem_map.items():
+                                        if base_name in names and not art_map.get(art_key):
+                                            art_map[art_key] = file_path
+                                            logger.debug("Added %s from media dir: %s", art_key, file_path)
                                 
                                 # Check if this is the extrafanart directory
                                 if file_path and file_type == "directory" and "extrafanart" in file_path.lower():

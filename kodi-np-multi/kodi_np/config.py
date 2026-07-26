@@ -30,7 +30,16 @@ cache_lock = threading.Lock()
 cache_building = set()
 CACHE_POLLER_ENABLED = os.getenv("CACHE_POLLER_ENABLED", "1") != "0"
 CACHE_POLLER_INTERVAL = float(os.getenv("CACHE_POLLER_INTERVAL", "12"))
-THUMB_ART_PRIORITY = ("poster", "front", "season.poster", "thumbnail", "fanart", "banner")
+THUMB_ART_PRIORITY = (
+    "banner",
+    "clearart",
+    "landscape",
+    "poster",
+    "front",
+    "season.poster",
+    "thumbnail",
+    "fanart",
+)
 CACHE_PROBE_FAIL_CLEAR_AFTER = int(os.getenv("CACHE_PROBE_FAIL_CLEAR_AFTER", "3"))
 SERVER_FAIL_BACKOFF_AFTER = int(os.getenv("SERVER_FAIL_BACKOFF_AFTER", "3"))
 SERVER_FAIL_BACKOFF_SECONDS = int(os.getenv("SERVER_FAIL_BACKOFF_SECONDS", "300"))
@@ -50,7 +59,7 @@ KODI_SERVERS = {}
 
 ART_TYPES = [
     "poster", "front", "back", "fanart", "clearlogo", "clearart", "discart", "cdart",
-    "banner", "season.poster", "thumbnail",
+    "banner", "landscape", "season.poster", "thumbnail",
 ]
 ART_TMP_DIR = os.getenv("ART_TMP_DIR", "/app/tmp")
 ART_TMP_PATH = Path(ART_TMP_DIR).resolve()
