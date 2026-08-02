@@ -2,7 +2,10 @@
     <!DOCTYPE html>
     <html>
     <head>
+      <title>Now Playing</title>
       <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+      <link rel="stylesheet" href="/static/nowplaying-common.css">
+      <script src="/static/nowplaying-common.js" defer></script>
       <style>
         body {
           font-family: sans-serif;
@@ -2274,6 +2277,16 @@
             </div>
           </div>
           
+          <div class="side-panel-section">
+            <div class="side-panel-row">
+              <label for="reducedMotionToggle">Reduce motion:</label>
+              <label class="toggle">
+                <input type="checkbox" class="toggle__input" id="reducedMotionToggle" onchange="toggleReducedMotion()">
+                <span class="toggle-track"><span class="toggle-indicator"></span></span>
+              </label>
+            </div>
+          </div>
+
           <div class="side-panel-section">
             <div class="slider-container">
               <label>Marquee shimmer interval: <span class="slider-value" id="marqueeIntervalValue">10s</span></label>

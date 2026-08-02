@@ -13,10 +13,14 @@ from logging_config import configure_logging
 
 configure_logging()
 
+APP_VERSION = "2.0.0"
 APP_DIR = Path(__file__).resolve().parent.parent
 app = Flask(__name__, template_folder=str(APP_DIR / "templates"))
 app.secret_key = os.getenv("FLASK_SECRET_KEY", uuid.uuid4().hex)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
+BASIC_AUTH = os.getenv("BASIC_AUTH", "").strip()
+CACHE_MAX_ART_FILES = int(os.getenv("CACHE_MAX_ART_FILES", "500"))
+CACHE_MAX_ART_MB = int(os.getenv("CACHE_MAX_ART_MB", "1024"))
 
 load_jobs = {}
 load_lock = threading.Lock()
@@ -43,6 +47,7 @@ THUMB_ART_PRIORITY = (
 CACHE_PROBE_FAIL_CLEAR_AFTER = int(os.getenv("CACHE_PROBE_FAIL_CLEAR_AFTER", "3"))
 SERVER_FAIL_BACKOFF_AFTER = int(os.getenv("SERVER_FAIL_BACKOFF_AFTER", "3"))
 SERVER_FAIL_BACKOFF_SECONDS = int(os.getenv("SERVER_FAIL_BACKOFF_SECONDS", "300"))
+SERVER_AUTH_BACKOFF_SECONDS = int(os.getenv("SERVER_AUTH_BACKOFF_SECONDS", "900"))
 KODI_RPC_TIMEOUT = float(os.getenv("KODI_RPC_TIMEOUT", "5"))
 
 server_backoff = {}
@@ -86,6 +91,7 @@ PREFERENCES_LOCK = threading.Lock()
 PREFERENCE_ENUMS = {
     "blurPreference": {"blurred", "non-blurred"},
     "overlayPreference": {"enabled", "disabled"},
+    "reducedMotionPreference": {"enabled", "disabled"},
 }
 PREFERENCE_RANGES = {
     "blurAmount": (0, 100),

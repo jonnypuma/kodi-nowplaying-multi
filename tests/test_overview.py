@@ -68,7 +68,7 @@ def test_probe_playback_fingerprint_uses_overview_title(app_module, patch_into):
 def test_overview_page_renders(client):
     response = client.get("/overview")
     assert response.status_code == 200
-    assert b"Kodi Overview" in response.data
+    assert b"Kodi Now Playing Overview" in response.data
     assert b"tile-retry" in response.data
     assert b"/api/retry-server/" in response.data
 

@@ -1584,6 +1584,31 @@ def cleanup_old_artwork_files():
                     removed += 1
             except Exception as file_e:
                 logger.debug(f"Artwork cleanup skipped {path}: {file_e}")
+        candidates = []
+        total_bytes = 0
+        for filename in os.listdir(_c.ART_TMP_DIR):
+            if not is_artwork_filename(filename) or filename in protected:
+                continue
+            path = os.path.join(_c.ART_TMP_DIR, filename)
+            try:
+                stat = os.stat(path)
+                candidates.append((stat.st_mtime, filename, stat.st_size))
+                total_bytes += stat.st_size
+            except OSError:
+                continue
+        max_bytes = max(0, _c.CACHE_MAX_ART_MB) * 1024 * 1024
+        candidates.sort()
+        while (
+            len(candidates) > max(0, _c.CACHE_MAX_ART_FILES)
+            or (max_bytes and total_bytes > max_bytes)
+        ):
+            _, filename, size = candidates.pop(0)
+            try:
+                os.remove(os.path.join(_c.ART_TMP_DIR, filename))
+                total_bytes -= size
+                removed += 1
+            except OSError:
+                break
         if removed:
             logger.info(f"Artwork cleanup removed {removed} files")
     except Exception as e:

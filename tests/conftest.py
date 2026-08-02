@@ -9,6 +9,10 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "kodi-np-multi"
 
 _CONFIG_MIRROR = {
+    "APP_VERSION",
+    "BASIC_AUTH",
+    "CACHE_MAX_ART_FILES",
+    "CACHE_MAX_ART_MB",
     "ART_TMP_DIR",
     "ART_TMP_PATH",
     "POLL_IDLE_CONFIRMATIONS",

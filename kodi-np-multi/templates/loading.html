@@ -134,12 +134,20 @@
             }
 
             function applyHtml(html) {
+                // document.write keeps the current URL (/loading); move to /nowplaying first.
+                try {
+                    history.replaceState(null, '', '/nowplaying');
+                } catch (e) {}
                 document.body.style.opacity = '0';
                 document.body.style.transition = 'opacity 0.5s ease';
                 setTimeout(() => {
                     document.open();
                     document.write(html);
                     document.close();
+                    // Now-playing pages may omit <title>; don't leave the tab on "Loading..."
+                    if (!document.title || document.title === 'Loading...') {
+                        document.title = 'Now Playing';
+                    }
                 }, 500);
             }
 

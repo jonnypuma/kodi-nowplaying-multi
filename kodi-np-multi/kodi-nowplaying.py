@@ -34,6 +34,7 @@ from kodi_np.art import (
 )
 from kodi_np.cache import (
     _poll_state_for,
+    cache_diagnostics,
     clear_cache_playback,
     get_cache_entry,
     make_playback_fingerprint,
@@ -56,6 +57,7 @@ from kodi_np.rpc import (
     note_server_rpc_failure,
     note_server_rpc_success,
     server_backoff_remaining,
+    server_backoff_status,
 )
 from kodi_np.servers import get_active_server, parse_kodi_servers, server_display_name
 from kodi_np.util import prune_load_jobs
@@ -78,5 +80,4 @@ def __getattr__(name: str):
 
 
 if __name__ == "__main__":
-    start_cache_poller()
     app.run(host="0.0.0.0", port=6001)

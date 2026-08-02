@@ -21,6 +21,16 @@ def server_backoff_remaining(server_id):
         return max(0, remaining)
 
 
+def server_backoff_status(server_id):
+    with _c.server_backoff_lock:
+        entry = dict(_c.server_backoff.get(server_id) or {})
+    return {
+        "remaining": max(0, float(entry.get("backoff_until") or 0) - time.time()),
+        "auth_failed": bool(entry.get("auth_failed")),
+        "error": entry.get("last_error"),
+    }
+
+
 def note_server_rpc_success(server_id):
     if server_id is None:
         return
@@ -33,6 +43,20 @@ def note_server_rpc_failure(server_id, error):
     if server_id is None:
         return False
     err_text = str(error)
+    if "401" in err_text or "unauthorized" in err_text.lower():
+        with _c.server_backoff_lock:
+            _c.server_backoff[server_id] = {
+                "fail_count": 1,
+                "backoff_until": time.time() + _c.SERVER_AUTH_BACKOFF_SECONDS,
+                "last_error": "Authentication failed",
+                "auth_failed": True,
+            }
+        logger.warning(
+            "Server %s authentication failed — pausing polls for %ss",
+            server_id,
+            _c.SERVER_AUTH_BACKOFF_SECONDS,
+        )
+        return True
     # Read timeouts are common while Kodi is busy/stopping — do not enter long backoff.
     if "read timed out" in err_text.lower():
         return False

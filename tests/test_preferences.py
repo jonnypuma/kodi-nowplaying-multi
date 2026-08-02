@@ -1,11 +1,13 @@
 def test_validate_preferences_accepts_known_values(app_module):
     sanitized, error = app_module.validate_preferences_update({
         "blurPreference": "blurred",
+        "reducedMotionPreference": "enabled",
         "blurAmount": 40,
         "fanartInterval": 15,
     })
     assert error is None
     assert sanitized["blurPreference"] == "blurred"
+    assert sanitized["reducedMotionPreference"] == "enabled"
     assert sanitized["blurAmount"] == "40"
     assert sanitized["fanartInterval"] == "15"
 

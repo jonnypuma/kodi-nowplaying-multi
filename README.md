@@ -337,6 +337,22 @@ FLASK_SECRET_KEY=paste-the-generated-value-here
 
 Optional: `LOG_LEVEL` (`DEBUG`, `INFO`, `WARNING`, `ERROR`; default `INFO`) controls log verbosity. Set `LOG_FORMAT=json` for one-line JSON logs.
 
+### Optional web login
+
+Set `BASIC_AUTH` to `username:password` to enable the sleek sign-in page. Leave it
+empty to keep the dashboard open on a trusted LAN/VPN:
+
+```env
+BASIC_AUTH=admin:choose-a-long-password
+```
+
+The health endpoints remain unauthenticated for Docker monitoring:
+`/health`, `/health/live`, and `/health/ready`.
+
+Artwork cache limits can be adjusted with `CACHE_MAX_ART_FILES` and
+`CACHE_MAX_ART_MB`. `/api/diagnostics` reports cache usage and per-server
+connection status after login.
+
 Legacy single-server names (`KODI_HOST`, `KODI_USER` / `KODI_USERNAME`, `KODI_PASS` / `KODI_PASSWORD`) still work if no numbered hosts are defined.
 
 Health check URL (for Docker / Uptime Kuma): `http://<host>:6001/health`

@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 
 from kodi_np import config as _c
-from kodi_np.rpc import kodi_rpc
+from kodi_np.rpc import kodi_rpc, server_backoff_status
 from kodi_np.servers import server_display_name
 
 logger = logging.getLogger("kodi.nowplaying")
@@ -59,6 +59,10 @@ def get_server_overview_status(server_id):
     }
 
     try:
+        backoff = server_backoff_status(server_id)
+        if backoff["auth_failed"]:
+            status["error"] = "Authentication failed"
+            return status
         players_response = kodi_rpc("Player.GetActivePlayers", {}, server_id=server_id)
         if players_response is None:
             status["error"] = "Connection failed"

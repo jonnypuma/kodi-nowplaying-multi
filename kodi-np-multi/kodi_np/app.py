@@ -20,6 +20,7 @@ def create_app():
     if not _blueprints_registered:
         register_blueprints(_c.app)
         _blueprints_registered = True
+    start_cache_poller()
     return _c.app
 
 

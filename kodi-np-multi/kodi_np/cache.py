@@ -13,6 +13,7 @@ from kodi_np.art import (
     cached_art_filenames,
     cleanup_old_artwork_files,
     empty_share,
+    is_artwork_filename,
     pick_fanart_filename,
     pick_thumb_art,
     pick_thumb_filename,
@@ -22,11 +23,41 @@ from kodi_np.rpc import (
     note_server_rpc_failure,
     note_server_rpc_success,
     server_backoff_remaining,
+    server_backoff_status,
 )
 from kodi_np.servers import server_display_name
 from kodi_np.overview import _format_overview_title
 
 logger = logging.getLogger("kodi.nowplaying")
+
+def cache_diagnostics():
+    """Return non-sensitive in-memory and artwork-cache diagnostics."""
+    files = 0
+    bytes_used = 0
+    try:
+        for name in os.listdir(_c.ART_TMP_DIR):
+            if not is_artwork_filename(name):
+                continue
+            try:
+                bytes_used += os.path.getsize(os.path.join(_c.ART_TMP_DIR, name))
+                files += 1
+            except OSError:
+                pass
+    except OSError:
+        pass
+    with _c.cache_lock:
+        entries = list(_c.nowplaying_cache.values())
+        building = len(_c.cache_building)
+    return {
+        "artwork_files": files,
+        "artwork_bytes": bytes_used,
+        "artwork_mb": round(bytes_used / 1024 / 1024, 2),
+        "max_artwork_files": _c.CACHE_MAX_ART_FILES,
+        "max_artwork_mb": _c.CACHE_MAX_ART_MB,
+        "cache_entries": len(entries),
+        "cache_builds_in_progress": building,
+        "ready_entries": sum(bool(e.get("cache_ready") and e.get("html")) for e in entries),
+    }
 
 def make_playback_fingerprint(item):
     """Stable id for the currently playing item (changes when media changes)."""
@@ -169,7 +200,13 @@ def probe_playback_fingerprint(server_id):
     """Cheap RPC to detect what (if anything) is playing on a server."""
     players_response = kodi_rpc("Player.GetActivePlayers", {}, server_id=server_id)
     if players_response is None:
-        return {"connected": False, "playing": False, "fingerprint": None, "error": "Connection failed"}
+        backoff = server_backoff_status(server_id)
+        return {
+            "connected": False,
+            "playing": False,
+            "fingerprint": None,
+            "error": "Authentication failed" if backoff["auth_failed"] else "Connection failed",
+        }
     players = players_response.get("result") or []
     if not players:
         return {"connected": True, "playing": False, "fingerprint": None, "error": None, "paused": False}
@@ -269,6 +306,19 @@ def refresh_server_cache(server_id):
 
     fingerprint = probe.get("fingerprint")
     existing = get_cache_entry(server_id)
+    if (
+        existing
+        and existing.get("fingerprint")
+        and fingerprint
+        and existing.get("fingerprint") != fingerprint
+        and existing.get("html")
+    ):
+        logger.info(
+            "Cache invalidated for server %s: %s -> %s (fingerprint changed)",
+            server_id,
+            existing.get("title") or existing.get("fingerprint"),
+            probe.get("title") or fingerprint,
+        )
     if (
         existing
         and existing.get("fingerprint") == fingerprint

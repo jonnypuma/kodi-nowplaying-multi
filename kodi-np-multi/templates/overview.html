@@ -4,6 +4,8 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Kodi Now Playing Overview</title>
+        <link rel="stylesheet" href="/static/nowplaying-common.css">
+        <script src="/static/nowplaying-common.js" defer></script>
         <style>
             :root {
                 --bg0: #141414;
@@ -242,16 +244,23 @@
                 return server.ip || server.host || ('Server ' + server.id);
             }
 
+            function escapeHtml(value) {
+                return String(value || '').replace(/[&<>"']/g, function (char) {
+                    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char];
+                });
+            }
+
             function tileArtHtml(server) {
                 if (!server.thumb) return '';
+                const alt = escapeHtml(server.title ? 'Artwork for ' + server.title : 'Current artwork');
                 if (server.thumb_is_banner) {
                     const bg = server.fanart
                         ? '<div class="tile-art-bg" style="background-image:url(\'' + server.fanart + '\')"></div><div class="tile-art-dim"></div>'
                         : '';
                     return '<div class="tile-art">' + bg +
-                        '<img class="tile-art-banner" src="' + server.thumb + '" alt=""></div>';
+                        '<img class="tile-art-banner" src="' + server.thumb + '" alt="' + alt + '"></div>';
                 }
-                return '<div class="tile-art"><img class="tile-art-fill" src="' + server.thumb + '" alt=""></div>';
+                return '<div class="tile-art"><img class="tile-art-fill" src="' + server.thumb + '" alt="' + alt + '"></div>';
             }
 
             function render(servers) {

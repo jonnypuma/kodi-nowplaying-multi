@@ -25,6 +25,10 @@ services:
       - KODI_USERNAME_4=${KODI_USERNAME_4}
       - KODI_PASSWORD_4=${KODI_PASSWORD_4}
       - POLL_IDLE_CONFIRMATIONS=2
+      # Optional web login: username:password. Leave empty to disable.
+      - BASIC_AUTH=${BASIC_AUTH:-}
+      - CACHE_MAX_ART_FILES=${CACHE_MAX_ART_FILES:-500}
+      - CACHE_MAX_ART_MB=${CACHE_MAX_ART_MB:-1024}
     env_file:
       - ./.env
     ports:

@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-08-01
+
+### Added
+- Production WSGI container runtime using Gunicorn with one worker and threaded
+  request handling.
+- Optional session-based web authentication via `BASIC_AUTH=username:password`;
+  leaving it empty keeps authentication disabled.
+- Sleek dark login screen with gradient branding, validation feedback, and safe
+  post-login return handling.
+- `/health/live` and `/health/ready` endpoints alongside the existing liveness
+  endpoint, including the application version.
+- `/api/diagnostics` with artwork-cache usage, configured cache limits, build
+  counts, and per-server connection state.
+- Configurable artwork cache limits through `CACHE_MAX_ART_FILES` and
+  `CACHE_MAX_ART_MB`.
+- Shared `nowplaying-common.css` and `nowplaying-common.js` assets for common
+  dashboard behavior.
+- Manual **Reduce motion** toggle in the right-hand settings panel, persisted
+  with the other preferences and defaulting to off.
+- GitHub Actions test workflow and root `pytest.ini` so the nested package is
+  tested consistently in local and CI runs.
+
+### Changed
+- Application version is now exposed as `2.0.0`.
+- Cache cleanup removes old unprotected artwork when file-count or size limits
+  are exceeded, while retaining files referenced by active cache entries.
+- JSON-RPC authentication failures are identified separately from network
+  failures and temporarily pause polling with a clear diagnostic.
+- Cache rebuild logs now describe the old and new now-playing titles when a
+  playback fingerprint changes.
+- Docker health monitoring remains unauthenticated so container orchestration
+  can continue to inspect the service when web login is enabled.
+
+### Accessibility
+- Artwork receives meaningful fallback alternative text where the UI creates
+  image elements without one.
+- Keyboard focus is visibly outlined with `:focus-visible`.
+- Marquee and icon-only controls expose button semantics, labels, and keyboard
+  activation with Enter or Space.
+- `prefers-reduced-motion: reduce` disables or minimizes marquee, discart,
+  fade, and other animated transitions for users who request less motion.
+
+### Tests
+- Added authentication, health, cache diagnostics, artwork-priority, codec,
+  and overview regression coverage.
+- Full suite passes with 92 tests.
+
 ## [1.2.3] - 2026-07-18
 
 ### Added
