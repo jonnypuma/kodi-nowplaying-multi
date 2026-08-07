@@ -5,6 +5,90 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+## [3.0.3] - 2026-08-02
+
+### Fixed
+- Overview no longer shows **Auth failed** for powered-off / unreachable Kodi
+  boxes; unreachable connection errors clear stale auth backoff and the overview
+  re-probes live status each refresh instead of trusting old cache flags.
+
+### Changed
+- Application version is now `3.0.3`.
+
+## [3.0.2] - 2026-08-02
+
+### Added
+- Progressive fanart loading: page paints with the primary fanart; remaining
+  variants download after load via `POST /api/fanart` and append to the slideshow.
+- `ART_DOWNLOAD_WORKERS` (default `2`, max `4`) for parallel HTTP artwork GETs
+  after serial Kodi `PrepareDownload` (still one Gunicorn worker).
+
+### Changed
+- Application version is now `3.0.2`.
+- Music soft-update on artist change refreshes fanart slides and re-hydrates any
+  pending variants.
+
+## [3.0.1] - 2026-08-02
+
+### Fixed
+- Opaque JPG discarts are cropped to a circle (`border-radius` + `object-fit`) so
+  spinning square backgrounds no longer show on music and movie pages.
+- Cast strip stays left-aligned when fewer than a full row of actors; cards no
+  longer stretch to fill the width with large gaps.
+- Cast HTML deduplicates the same actor listed multiple times with alternate
+  role strings from Kodi/NFO scrapers.
+- Soft track changes reload lyrics (and guard against stale responses) so the
+  first song’s lines no longer stick after autoplay.
+- Interactive `/poll_playback` always resolves `Player.GetItem`, so song/artist
+  changes are detected on the normal 4s poll instead of waiting on a slower
+  item-check interval.
+- Idle / hard-reload navigation clears tracked item id and stops further poll
+  redirects, avoiding a stale previous track after stop → new playback.
+- Default idle confirmation is two empty-player polls (`POLL_IDLE_CONFIRMATIONS=2`);
+  now-playing pages confirm stop after two consecutive `playing: false` responses.
+
+### Changed
+- Application version is now `3.0.1`.
+- Movie discart peek / poster drop positioning shows more of the disc under the
+  content overlay without clipping into the marquee.
+
+## [3.0.0] - 2026-08-02
+
+### Added
+- Synced karaoke-style lyrics on the music page (Kodi `lyrics` field first, then
+  free [LRCLib](https://lrclib.net) lookup) with a Lyrics / Album / Artist tab panel.
+- `/api/lyrics` and `/api/cast-thumb` endpoints for async lyrics resolution and
+  post-load cast thumbnail downloads.
+- Cast strip with actor names immediately, thumbnails fading in after page load.
+- Overview tiles distinguish **Auth failed** from generic **Offline**, with clearer
+  status copy and continued 5-second auto-refresh.
+- Shared Jinja partial `templates/partials/side_panel.html` for now-playing settings.
+
+### Changed
+- Application version is now `3.0.0`.
+- README documents Gunicorn (single worker), `FLASK_SECRET_KEY` session behavior,
+  and production runtime details.
+- Shared `nowplaying-common.css` / `.js` expanded for cast, lyrics, and info tabs.
+- Now-playing layout: larger cast thumbs that grow with column width, tighter
+  spacing under the marquee, full-width plot/progress, and even side-panel
+  vertical rhythm.
+- Music info panel (Lyrics / Album / Artist) is wider; Album and Artist text
+  boxes match the Lyrics panel height. Lyrics resolution logs `source=kodi|lrclib`
+  and uses stricter LRCLib matching (album + duration scoring).
+- Album/artist text falls back to TheAudioDB (then Wikipedia) when Kodi fields
+  are empty; fetched asynchronously after page load and share-cached per album /
+  artist across soft track changes.
+
+### Tests
+- Coverage for LRC parsing, lyrics preference enum, overview `auth_failed`, and
+  cast HTML builder. Full suite passes with 99 tests.
+
+=======
+>>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
+>>>>>>> Stashed changes
 ## [2.0.0] - 2026-08-01
 
 ### Added

@@ -9,12 +9,10 @@ def register_blueprints(app):
     from kodi_np.routes.servers_prefs import bp as servers_prefs_bp
     from kodi_np.routes.static_media import bp as static_media_bp
     from kodi_np.routes.overview import bp as overview_bp
-    from kodi_np.routes.extras import bp as extras_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(servers_prefs_bp)
     app.register_blueprint(overview_bp)
-    app.register_blueprint(extras_bp)
     app.register_blueprint(pages_bp)
     app.register_blueprint(playback_bp)
     app.register_blueprint(static_media_bp)

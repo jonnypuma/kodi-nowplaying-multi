@@ -56,31 +56,16 @@ def get_server_overview_status(server_id):
         "title": None,
         "media_type": None,
         "error": None,
-        "auth_failed": False,
     }
 
     try:
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-        players_response = kodi_rpc(
-            "Player.GetActivePlayers",
-            {},
-            server_id=server_id,
-            bypass_backoff=True,
-        )
-=======
->>>>>>> Stashed changes
         backoff = server_backoff_status(server_id)
         if backoff["auth_failed"]:
             status["error"] = "Authentication failed"
             return status
         players_response = kodi_rpc("Player.GetActivePlayers", {}, server_id=server_id)
->>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
         if players_response is None:
-            backoff = server_backoff_status(server_id)
-            status["auth_failed"] = bool(backoff["auth_failed"])
-            status["error"] = "Authentication failed" if status["auth_failed"] else "Connection failed"
+            status["error"] = "Connection failed"
             return status
 
         status["connected"] = True

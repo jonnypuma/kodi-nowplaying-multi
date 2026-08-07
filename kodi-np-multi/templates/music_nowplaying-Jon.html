@@ -75,25 +75,20 @@
         }
         .three-column-layout {
           display: flex;
-          gap: 24px;
+          gap: 40px;
           align-items: flex-start;
-          width: 100%;
         }
         .column-left {
           flex: 0 0 auto;
         }
         .column-middle {
-          flex: 1 1 480px;
-          min-width: 280px;
-          max-width: 620px;
+          flex: 0 0 828px;
           display: flex;
           flex-direction: column;
           gap: 15px;
         }
         .column-right {
-          flex: 1 1 520px;
-          min-width: 360px;
-          max-width: 760px;
+          flex: 1;
           display: flex;
           flex-direction: column;
           gap: 20px;
@@ -105,11 +100,8 @@
           border-left: 4px solid #4caf50;
           font-size: 1.0em;
           line-height: 1.5;
-          /* Match lyrics panel height so Album/Artist use the same vertical space */
-          height: min(52vh, 420px);
-          max-height: min(52vh, 420px);
+          max-height: 200px;
           overflow-y: auto;
-          box-sizing: border-box;
         }
         /* Custom Scrollbar Styling */
         .album-description::-webkit-scrollbar {
@@ -154,7 +146,7 @@
           overflow: visible;
           height: 260px;
           width: 240px;
-          margin-top: clamp(72px, 11vh, 100px);
+          margin-top: 60px;
           perspective: 1200px;
           box-sizing: border-box;
         }
@@ -261,21 +253,17 @@
         }
         .discart-wrapper {
           position: absolute;
-          top: clamp(-70px, -10vh, -48px);
+          top: -95px;
           left: 50%;
           transform: translate(-50%, 0);
           z-index: 1;
-          height: clamp(140px, 22vh, 200px);
-          width: clamp(140px, 22vh, 200px);
+          height: 220px;
+          width: 220px;
           pointer-events: none;
           transition: transform 0.35s ease, opacity 0.35s ease;
         }
         .discart {
-          width: clamp(140px, 22vh, 200px);
-          height: clamp(140px, 22vh, 200px);
-          aspect-ratio: 1 / 1;
-          object-fit: cover;
-          border-radius: 50%;
+          width: 220px;
           animation: spin 6s linear infinite;
           animation-play-state: running;
           opacity: 1;
@@ -692,7 +680,7 @@
           z-index: 1500;
           transition: right 0.5s ease-in-out;
           overflow: visible;
-          padding: 12px;
+          padding: 20px;
           box-shadow: -5px 0 20px rgba(0, 0, 0, 0.5);
           box-sizing: border-box;
         }
@@ -762,6 +750,8 @@
         }
         
         .side-panel-section {
+          margin-bottom: 25px;
+          padding-bottom: 20px;
           border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
         
@@ -769,10 +759,10 @@
           border-bottom: none;
         }
         
-        .side-panel-section label,
-        .side-panel-item label {
+        .side-panel-section label {
           display: block;
           color: rgba(255, 255, 255, 0.9);
+          margin-bottom: 10px;
           font-size: 14px;
         }
         
@@ -780,6 +770,7 @@
           display: flex;
           align-items: center;
           gap: 15px;
+          margin-bottom: 15px;
         }
         
         /* Toggle Component Styles */
@@ -865,7 +856,7 @@
         
         /* Slider Styles */
         .slider-container {
-          margin-top: 0;
+          margin-top: 10px;
         }
         
         .slider {
@@ -1110,8 +1101,6 @@
         let elapsed = __np.elapsed;
         let duration = __np.duration;
         let paused = __np.paused;
-        window.getNowPlayingElapsed = function () { return elapsed; };
-        window.getNowPlayingPaused = function () { return !!paused; };
         let lastPlaybackState = null;
         let noPlayCount = 0;
         let softUpdateInFlight = false;
@@ -1207,7 +1196,7 @@
             });
         }
 
-        let lastItemId = (window.SOFT_IDENTITY && window.SOFT_IDENTITY.item_id) || null;
+        let lastItemId = null;
         let lastPausedState = null;
         let cachedButton = null;
         
@@ -1372,24 +1361,24 @@
                 lastPausedState = currentPaused;
               }
               
+              // Check for playback state change (start/stop)
               if (lastPlaybackState === null) {
                 lastPlaybackState = currentState;
-                if (currentItemId) lastItemId = currentItemId;
-                lastPausedState = currentPaused;
+                lastItemId = currentItemId;
+                lastPausedState = currentPaused; // Initialize lastPausedState
                 updatePlaybackButton(currentPaused);
-              } else {
-                // Detect item changes whenever playing — including after a brief stop.
-                // Keep lastItemId while idle so resume with a different track is not missed.
-                const knownItemId = lastItemId || ((window.SOFT_IDENTITY && window.SOFT_IDENTITY.item_id) || null);
-                if (isPlaying && currentItemId && knownItemId && currentItemId !== knownItemId) {
-                  console.log(`[DEBUG] Item changed from ${knownItemId} to ${currentItemId}`);
-                  attemptSoftUpdate(currentItemId);
-                  lastItemId = currentItemId;
-                } else if (isPlaying && currentItemId) {
-                  lastItemId = currentItemId;
-                }
+              } else if (currentState !== lastPlaybackState) {
                 lastPlaybackState = currentState;
               }
+              // Check for item change (new track/episode while playing)
+              else if (currentState && currentItemId && lastItemId && currentItemId !== lastItemId) {
+                console.log(`[DEBUG] Item changed from ${lastItemId} to ${currentItemId}`);
+                attemptSoftUpdate(currentItemId);
+              }
+              
+              // Always update tracking variables at the end
+              lastPlaybackState = currentState;
+              lastItemId = currentItemId;
             })
             .catch(error => {
               console.error('Polling error:', error);
@@ -1400,7 +1389,6 @@
         }
 
         function hardReloadNowPlaying() {
-          redirectingToIdle = true; // stop further poll actions while navigating
           document.body.classList.add('fade-out');
           setTimeout(() => {
             window.location.href = '/loading';
@@ -1441,22 +1429,13 @@
             setMusicBadge('soft-badge-track', (data.badges && data.badges.track) || '');
             setMusicBadge('soft-badge-title', (data.badges && data.badges.title) || '');
 
-            if (data.album_changed || data.refresh_album_text) {
-              const albumWrap = document.getElementById('soft-album-description');
-              const albumText = document.getElementById('soft-album-description-text');
-              if (albumWrap && albumText) {
-                const desc = (data.album_description || '').trim();
-                if (desc) {
-                  albumText.textContent = desc;
-                  albumText.classList.remove('info-panel-empty');
-                  albumWrap.style.display = '';
-                } else if (data.album_changed) {
-                  albumText.textContent = 'No album description available.';
-                  albumText.classList.add('info-panel-empty');
-                  albumWrap.style.display = '';
-                }
-              }
-              if (data.album_changed && data.art && data.art.cover) {
+            if (data.album_changed) {
+              setSoftBlock(
+                'soft-album-description',
+                'soft-album-description-text',
+                data.album_description || ''
+              );
+              if (data.art && data.art.cover) {
                 const artWrap = document.getElementById('soft-album-art');
                 if (artWrap) {
                   let front = artWrap.querySelector('img.front-face') || artWrap.querySelector('img.poster') || artWrap.querySelector('img');
@@ -1472,7 +1451,7 @@
                   }
                 }
               }
-              if (data.album_changed && data.art && data.art.discart) {
+              if (data.art && data.art.discart) {
                 const discWrap = document.getElementById('soft-discart');
                 if (discWrap) {
                   let img = discWrap.querySelector('img');
@@ -1486,38 +1465,22 @@
               }
             }
 
-            if (data.artist_changed || data.refresh_artist_text) {
+            if (data.artist_changed) {
               const bioWrap = document.getElementById('soft-artist-bio');
               const bioText = document.getElementById('soft-artist-bio-text');
               if (bioWrap && bioText) {
                 if (data.artist_bio) {
                   bioText.textContent = data.artist_bio;
-                  bioText.classList.remove('info-panel-empty');
                   bioWrap.style.display = '';
                   const bornEl = document.getElementById('soft-artist-born');
                   if (bornEl && data.artist_born) {
                     bornEl.innerHTML = '<strong>Born:</strong> ' + data.artist_born;
-                  } else if (!bornEl && data.artist_born) {
-                    const p = document.createElement('p');
-                    p.id = 'soft-artist-born';
-                    p.innerHTML = '<strong>Born:</strong> ' + data.artist_born;
-                    bioWrap.insertBefore(p, bioText);
                   }
-                } else if (data.artist_changed) {
-                  bioText.textContent = 'No artist biography available.';
-                  bioText.classList.add('info-panel-empty');
-                  bioWrap.style.display = '';
                 }
               }
-              if (data.artist_changed && data.art && data.art.clearlogo) {
+              if (data.art && data.art.clearlogo) {
                 const logo = document.querySelector('.logo');
                 if (logo) logo.src = data.art.clearlogo;
-              }
-              if (data.artist_changed && data.art && typeof window.replaceFanartSlideshow === 'function') {
-                window.replaceFanartSlideshow(
-                  data.art.fanart_slides || [],
-                  data.art.fanart_pending || {session_id: '', items: []}
-                );
               }
             }
 
@@ -1549,25 +1512,6 @@
             }
             if (data.item_id) {
               lastItemId = data.item_id;
-            }
-            if (typeof window.reloadNowPlayingLyrics === 'function') {
-              window.reloadNowPlayingLyrics(data.lyrics || {
-                artist: data.artist || '',
-                title: data.title || '',
-                album: data.album || '',
-                duration: data.duration,
-                kodi_lyrics: ''
-              });
-            }
-            if (typeof window.reloadMusicMetaFallback === 'function' && (data.need_album_meta || data.need_artist_meta)) {
-              window.reloadMusicMetaFallback({
-                artist: data.artist || '',
-                album: data.album || '',
-                album_id: data.album_id,
-                artist_id: data.artist_id,
-                need_album: !!data.need_album_meta,
-                need_artist: !!data.need_artist_meta
-              });
             }
             content.classList.remove('soft-fade');
           }, 280);
@@ -1632,34 +1576,45 @@
         // Fanart slideshow functionality - wait for DOM to be ready
         setTimeout(function() {
           let currentFanartIndex = 0;
-
+          const fanartSlides = document.querySelectorAll('.fanart-slide');
+          const totalFanarts = fanartSlides.length;
+          
+          console.log(`[DEBUG] Fanart slideshow: Found ${totalFanarts} fanart slides`);
+          
           function cycleFanarts() {
-            const fanartSlides = document.querySelectorAll('.fanart-slide');
-            const totalFanarts = fanartSlides.length;
-            if (totalFanarts <= 1) return;
-
-            const currentSlide = fanartSlides[currentFanartIndex % totalFanarts];
-            if (currentSlide) {
-              currentSlide.classList.remove('active');
-              currentSlide.classList.add('fade-out');
+            console.log(`[DEBUG] cycleFanarts called, totalFanarts: ${totalFanarts}`);
+            if (totalFanarts <= 1) {
+              console.log('[DEBUG] Only 1 or no fanarts, skipping slideshow');
+              return;
             }
-
+            
+            console.log(`[DEBUG] Cycling from fanart ${currentFanartIndex} to next`);
+            
+            // Fade out current slide
+            const currentSlide = fanartSlides[currentFanartIndex];
+            currentSlide.classList.remove('active');
+            currentSlide.classList.add('fade-out');
+            
+            // Move to next slide
             currentFanartIndex = (currentFanartIndex + 1) % totalFanarts;
-
+            
+            // Fade in next slide
             const nextSlide = fanartSlides[currentFanartIndex];
-            if (nextSlide) {
-              nextSlide.classList.remove('fade-out');
-              nextSlide.classList.add('active');
-            }
+            nextSlide.classList.remove('fade-out');
+            nextSlide.classList.add('active');
+            
+            console.log(`[DEBUG] Now showing fanart ${currentFanartIndex}`);
           }
-
-          window.cycleFanarts = cycleFanarts;
-          const initialCount = document.querySelectorAll('.fanart-slide').length;
-          if (initialCount > 1) {
+          
+          // Start slideshow if we have multiple fanarts
+          if (totalFanarts > 1) {
+            console.log('[DEBUG] Starting fanart slideshow with 20 second intervals');
+            // Store cycleFanarts globally so it can be accessed by updateFanartInterval
+            window.cycleFanarts = cycleFanarts;
             const savedFanartInterval = localStorage.getItem('fanartInterval') || '20';
             fanartInterval = setInterval(cycleFanarts, parseInt(savedFanartInterval) * 1000);
-            window._fanartSlideshowTimer = fanartInterval;
-            window._fanartSlideshowStarted = true;
+          } else {
+            console.log('[DEBUG] Not enough fanarts for slideshow');
           }
         }, 100); // Wait 100ms for DOM to be ready
         
@@ -2358,7 +2313,6 @@
         {{ fanart_debug_html }}
         {{ fanart_slides_html }}
       </div>
-      <script type="application/json" id="fanart-pending">{{ fanart_pending_json|safe }}</script>
       
       <div class="marquee">
         <div class="marquee-text"><span class="letter">N</span><span class="letter">O</span><span class="letter">W</span><span class="letter">&nbsp;</span><span class="letter">P</span><span class="letter">L</span><span class="letter">A</span><span class="letter">Y</span><span class="letter">I</span><span class="letter">N</span><span class="letter">G</span></div>
@@ -2414,16 +2368,14 @@
             </div>
           </div>
           
-          <!-- Right Column: Lyrics / Album / Artist panel -->
+          <!-- Right Column: Artist Bio and Album Description -->
           <div class="column-right">
-            {{ music_info_panel_html }}
+            {{ album_description_html }}
+            {{ artist_bio_html }}
           </div>
         </div>
       </div>
       
-<<<<<<< HEAD
-      {% include 'partials/side_panel.html' %}
-=======
       <!-- Side Panel -->
       <div class="side-panel" id="sidePanel">
         <!-- Side Panel Toggle Button -->
@@ -2518,7 +2470,6 @@
           </div>
         </div>
       </div>
->>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
     </body>
     </html>
     

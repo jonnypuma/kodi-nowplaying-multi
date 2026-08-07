@@ -69,32 +69,15 @@ def api_overview():
         return jsonify({"servers": servers})
 
     for server_id in sorted(_c.KODI_SERVERS.keys()):
-        live = get_server_overview_status(server_id)
-        live["backoff_remaining"] = int(server_backoff_remaining(server_id))
         cached = overview_from_cache(server_id)
         if cached is not None:
-            cached["connected"] = live["connected"]
-            cached["auth_failed"] = live["auth_failed"]
-            cached["error"] = live["error"]
-            cached["backoff_remaining"] = live["backoff_remaining"]
-            if not live["connected"]:
-                cached["playing"] = False
-                cached["paused"] = False
-                if live.get("title"):
-                    cached["title"] = live["title"]
-            elif live.get("playing"):
-                cached["playing"] = live["playing"]
-                cached["paused"] = live.get("paused", False)
-                if live.get("title"):
-                    cached["title"] = live["title"]
-                if live.get("media_type"):
-                    cached["media_type"] = live["media_type"]
             servers.append(cached)
             continue
-        live["thumb"] = None
-        live["cache_ready"] = False
-        live.setdefault("auth_failed", live.get("error") == "Authentication failed")
-        servers.append(live)
+        status = get_server_overview_status(server_id)
+        status["thumb"] = None
+        status["cache_ready"] = False
+        status["backoff_remaining"] = int(server_backoff_remaining(server_id))
+        servers.append(status)
 
     return jsonify({"servers": servers})
 
@@ -117,6 +100,5 @@ def retry_server(server_id):
         status["thumb"] = None
         status["cache_ready"] = False
         status["backoff_remaining"] = int(server_backoff_remaining(server_id))
-        status.setdefault("auth_failed", status.get("error") == "Authentication failed")
 
     return jsonify({"success": True, "server": status})

@@ -35,7 +35,7 @@ def test_probe_playback_fingerprint_uses_overview_title(app_module, patch_into):
     """Regression: cache probe must import _format_overview_title (post-refactor)."""
     app_module.server_backoff.clear()
 
-    def fake_rpc(method, params=None, server_id=None, **kwargs):
+    def fake_rpc(method, params=None, server_id=None):
         if method == "Player.GetActivePlayers":
             return {"result": [{"playerid": 1}]}
         if method == "Player.GetItem":

@@ -67,7 +67,6 @@
             .tile.playing { border-left-color: var(--green); cursor: pointer; }
             .tile.paused { border-left-color: var(--amber); cursor: pointer; }
             .tile.offline { border-left-color: var(--red); opacity: 0.85; }
-            .tile.auth-failed { border-left-color: #ab47bc; opacity: 0.9; }
             .tile.idle { border-left-color: rgba(255,255,255,0.25); }
             .tile.playing:hover, .tile.paused:hover {
                 transform: translateY(-2px);
@@ -123,7 +122,6 @@
             .badge.paused { background: rgba(255,179,0,0.22); color: #ffe082; }
             .badge.idle { background: rgba(255,255,255,0.08); color: var(--muted); }
             .badge.offline { background: rgba(229,57,53,0.22); color: #ef9a9a; }
-            .badge.auth-failed { background: rgba(171,71,188,0.28); color: #e1bee7; }
             .tile-meta { color: var(--muted); font-size: 0.85rem; text-transform: capitalize; }
             .tile-ready { color: #a5d6a7; font-size: 0.75rem; }
             .tile-status-row {
@@ -172,17 +170,12 @@
             <h1>Kodi Now Playing Overview</h1>
         </header>
         <div id="grid"><div class="empty">Loading servers…</div></div>
-            <footer id="updated">Auto-refreshing every 5 seconds</footer>
+        <footer id="updated">Refreshing every 5 seconds</footer>
         <script>
             const grid = document.getElementById('grid');
             const updated = document.getElementById('updated');
 
-            function isAuthFailed(server) {
-                return !!(server.auth_failed || server.error === 'Authentication failed');
-            }
-
             function badgeClass(server) {
-                if (isAuthFailed(server)) return 'auth-failed';
                 if (!server.connected) return 'offline';
                 if (server.playing && server.paused) return 'paused';
                 if (server.playing) return 'playing';
@@ -190,7 +183,6 @@
             }
 
             function badgeLabel(server) {
-                if (isAuthFailed(server)) return 'Auth failed';
                 if (!server.connected) return 'Offline';
                 if (server.playing && server.paused) return 'Paused';
                 if (server.playing) return 'Playing';
@@ -214,11 +206,6 @@
                 if (server.playing) return server.title || 'Playing';
                 if (server.connected) return 'Nothing playing';
                 const backoff = formatBackoff(server.backoff_remaining);
-                if (isAuthFailed(server)) {
-                    return backoff
-                        ? 'Wrong username/password · retry in ' + backoff
-                        : 'Wrong username/password';
-                }
                 if (backoff) return (server.error || 'Connection failed') + ' · retry in ' + backoff;
                 return server.error || 'Unreachable';
             }
@@ -325,7 +312,7 @@
                     }
                     grid.appendChild(tile);
                 });
-                updated.textContent = 'Auto-refresh · updated ' + new Date().toLocaleTimeString();
+                updated.textContent = 'Updated ' + new Date().toLocaleTimeString();
             }
 
             async function refresh() {
@@ -335,7 +322,6 @@
                     render(data.servers || []);
                 } catch (e) {
                     grid.innerHTML = '<div class="error-note">Failed to load overview</div>';
-                    updated.textContent = 'Auto-refresh paused · retrying…';
                 }
             }
 

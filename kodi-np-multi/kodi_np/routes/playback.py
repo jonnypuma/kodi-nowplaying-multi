@@ -82,48 +82,47 @@ def poll_playback():
             current_time = time.time()
             current_item_id = state.get("item_id")
 
-            if current_time - float(state.get("last_check") or 0) >= _c.EPISODE_CHECK_INTERVAL or not state.get("item_id"):
-                with _c.playback_poll_lock:
-                    state["last_check"] = current_time
-                try:
-                    active_players = players.get("result") or []
-                    if active_players:
-                        player_id = active_players[0].get("playerid")
-                        item = _rpc(
-                            "Player.GetItem",
-                            {
-                                "playerid": player_id,
-                                "properties": ["title", "album", "artist", "showtitle", "season", "episode", "file"],
-                            },
-                        )
-                        if item and item.get("result") and item.get("result", {}).get("item"):
-                            current_item = item.get("result", {}).get("item", {})
-                            item_id = current_item.get("id")
-                            if current_item.get("type") == "song" and item_id:
-                                current_item_id = f"song_{item_id}"
-                            elif current_item.get("type") == "episode" and item_id:
-                                current_item_id = f"episode_{item_id}"
-                            elif current_item.get("type") == "movie" and item_id:
-                                current_item_id = f"movie_{item_id}"
-                            else:
-                                current_item_id = f"other_{current_item.get('title', 'unknown')}"
+            # Always resolve the playing item on interactive polls so song/artist
+            # changes are detected promptly (frontend already polls ~every 4s).
+            try:
+                active_players = players.get("result") or []
+                if active_players:
+                    player_id = active_players[0].get("playerid")
+                    item = _rpc(
+                        "Player.GetItem",
+                        {
+                            "playerid": player_id,
+                            "properties": ["title", "album", "artist", "showtitle", "season", "episode", "file"],
+                        },
+                    )
+                    if item and item.get("result") and item.get("result", {}).get("item"):
+                        current_item = item.get("result", {}).get("item", {})
+                        item_id = current_item.get("id")
+                        if current_item.get("type") == "song" and item_id:
+                            current_item_id = f"song_{item_id}"
+                        elif current_item.get("type") == "episode" and item_id:
+                            current_item_id = f"episode_{item_id}"
+                        elif current_item.get("type") == "movie" and item_id:
+                            current_item_id = f"movie_{item_id}"
+                        else:
+                            current_item_id = f"other_{current_item.get('title', 'unknown')}"
 
-                            with _c.playback_poll_lock:
-                                # First observation or same item: just store. Never emit ephemeral change ids.
-                                state["item_id"] = current_item_id
-                        elif item is None:
-                            return jsonify({
-                                "playing": True if state.get("item_id") else None,
-                                "error": True,
-                                "item_id": state.get("item_id"),
-                            })
-                except Exception as e:
-                    logger.debug(f"Failed to check episode: {e}")
-                    return jsonify({
-                        "playing": True if state.get("item_id") else None,
-                        "error": True,
-                        "item_id": state.get("item_id"),
-                    })
+                        with _c.playback_poll_lock:
+                            state["item_id"] = current_item_id
+                            state["last_check"] = current_time
+                    elif item is None:
+                        return jsonify({
+                            "playing": True if state.get("item_id") else None,
+                            "error": True,
+                            "item_id": state.get("item_id"),
+                        })
+            except Exception as e:
+                logger.debug(f"Failed to check episode: {e}")
+                return jsonify({
+                    "playing": True if state.get("item_id") else None,
+                    "error": True,
+                    "item_id": state.get("item_id"),
+                })
 
             active_players = players.get("result", [])
             is_paused = False

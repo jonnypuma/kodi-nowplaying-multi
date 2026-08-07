@@ -13,15 +13,7 @@ from logging_config import configure_logging
 
 configure_logging()
 
-<<<<<<< Updated upstream
 APP_VERSION = "2.0.0"
-=======
-<<<<<<< HEAD
-APP_VERSION = "3.0.3"
-=======
-APP_VERSION = "2.0.0"
->>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
->>>>>>> Stashed changes
 APP_DIR = Path(__file__).resolve().parent.parent
 app = Flask(__name__, template_folder=str(APP_DIR / "templates"))
 app.secret_key = os.getenv("FLASK_SECRET_KEY", uuid.uuid4().hex)
@@ -57,8 +49,6 @@ SERVER_FAIL_BACKOFF_AFTER = int(os.getenv("SERVER_FAIL_BACKOFF_AFTER", "3"))
 SERVER_FAIL_BACKOFF_SECONDS = int(os.getenv("SERVER_FAIL_BACKOFF_SECONDS", "300"))
 SERVER_AUTH_BACKOFF_SECONDS = int(os.getenv("SERVER_AUTH_BACKOFF_SECONDS", "900"))
 KODI_RPC_TIMEOUT = float(os.getenv("KODI_RPC_TIMEOUT", "5"))
-# Parallel HTTP GETs for artwork after serial PrepareDownload (1–4).
-ART_DOWNLOAD_WORKERS = max(1, min(4, int(os.getenv("ART_DOWNLOAD_WORKERS", "2"))))
 
 server_backoff = {}
 server_backoff_lock = threading.Lock()
@@ -80,7 +70,7 @@ ART_TMP_DIR = os.getenv("ART_TMP_DIR", "/app/tmp")
 ART_TMP_PATH = Path(ART_TMP_DIR).resolve()
 ART_FILE_PREFIX_LEN = 33
 ART_CLEANUP_AGE_SECONDS = 6 * 60 * 60
-ARTWORK_FILENAME_RE = re.compile(r"^(?:share_|cast_)?[0-9a-f]{32}_[A-Za-z0-9_.-]+\.jpg$")
+ARTWORK_FILENAME_RE = re.compile(r"^(?:share_)?[0-9a-f]{32}_[A-Za-z0-9_.-]+\.jpg$")
 STATIC_FILENAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 ART_TMP_PATH.mkdir(parents=True, exist_ok=True)
 
@@ -102,13 +92,6 @@ PREFERENCE_ENUMS = {
     "blurPreference": {"blurred", "non-blurred"},
     "overlayPreference": {"enabled", "disabled"},
     "reducedMotionPreference": {"enabled", "disabled"},
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-    "lyricsPanelPreference": {"lyrics", "album", "artist"},
-=======
->>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
->>>>>>> Stashed changes
 }
 PREFERENCE_RANGES = {
     "blurAmount": (0, 100),

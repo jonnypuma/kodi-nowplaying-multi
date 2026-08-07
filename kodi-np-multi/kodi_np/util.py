@@ -1,10 +1,72 @@
 """Small shared helpers."""
 from __future__ import annotations
 
+import json
 import time
 from html import escape
 
 from kodi_np import config as _c
+
+
+def build_cast_html(cast_list, limit=8):
+    """Render a cast strip with names immediately; thumbs lazy-load via data-thumb.
+
+    Kodi/NFO scrapers often list the same actor more than once with alternate
+    role strings (e.g. "Adam / He-Man" and "Adam Glenn / He-Man"). Deduplicate
+    by actor name and keep the richer role / thumbnail.
+    """
+    if not isinstance(cast_list, list) or not cast_list:
+        return ""
+    members = []
+    by_name = {}
+    for entry in cast_list:
+        if not isinstance(entry, dict):
+            continue
+        name = (entry.get("name") or "").strip()
+        if not name:
+            continue
+        thumb = entry.get("thumbnail") or ""
+        if isinstance(thumb, str) and (
+            "DefaultActor" in thumb or "DefaultImage" in thumb or not thumb.strip()
+        ):
+            thumb = ""
+        role = (entry.get("role") or "").strip()
+        key = name.casefold()
+        existing = by_name.get(key)
+        if existing is not None:
+            if len(role) > len(existing["role"]):
+                existing["role"] = role
+            if thumb and not existing["thumbnail"]:
+                existing["thumbnail"] = thumb
+            continue
+        member = {"name": name, "role": role, "thumbnail": thumb}
+        by_name[key] = member
+        members.append(member)
+        if len(members) >= limit:
+            break
+    if not members:
+        return ""
+
+    cards = []
+    for member in members:
+        name = escape(member["name"])
+        role = escape(member["role"])
+        thumb_attr = escape(member["thumbnail"], quote=True) if member["thumbnail"] else ""
+        role_html = f'<span class="cast-role">{role}</span>' if role else ""
+        cards.append(
+            '<div class="cast-card">'
+            f'<div class="cast-avatar" data-thumb="{thumb_attr}" aria-hidden="true"></div>'
+            f'<div class="cast-name">{name}</div>'
+            f"{role_html}"
+            "</div>"
+        )
+    payload = escape(json.dumps(members), quote=True)
+    return (
+        '<div class="cast-strip" id="cast-strip" data-cast="' + payload + '">'
+        '<div class="cast-heading">Cast</div>'
+        '<div class="cast-row">' + "".join(cards) + "</div>"
+        "</div>"
+    )
 
 def prune_load_jobs(force_id=None):
     """Remove finished/stale load jobs and optionally drop a specific job id."""

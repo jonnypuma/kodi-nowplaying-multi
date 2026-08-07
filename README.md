@@ -9,7 +9,9 @@ This is a Docker container application whcihc provides a html page showing what 
 
 ## Package layout
 
-The Flask app lives in the `kodi_np/` package. Docker still starts via the thin shim `kodi-nowplaying.py` (`CMD ["python", "kodi-nowplaying.py"]`).
+The Flask app lives in the `kodi_np/` package. Docker starts Gunicorn against
+`kodi_np.app:app` (see `Dockerfile`). The shim `kodi-nowplaying.py` remains useful
+for local non-Docker runs.
 
 | Module | Responsibility |
 |--------|----------------|
@@ -18,21 +20,25 @@ The Flask app lives in the `kodi_np/` package. Docker still starts via the thin 
 | `kodi_np/servers.py` / `preferences.py` | Multi-server registry and prefs file |
 | `kodi_np/art.py` | Artwork download + identity-scoped share reuse |
 | `kodi_np/cache.py` | Per-server now-playing cache + poller |
+| `kodi_np/lyrics.py` | LRC parsing + LRCLib lyrics lookup |
+| `kodi_np/music_meta.py` | Album/artist text fallbacks (TheAudioDB, Wikipedia) |
 | `kodi_np/nowplaying.py` | HTML build, load jobs, soft-update payloads |
-| `kodi_np/routes/` | Blueprints (pages, playback, overview, static) |
+| `kodi_np/routes/` | Blueprints (pages, playback, overview, extras, static) |
 | `kodi_np/app.py` | `create_app()` factory |
-| `templates/` | Jinja pages (`index`, `overview`, `loading`, media layouts) |
+| `templates/` | Jinja pages (`index`, `overview`, `loading`, media layouts, `partials/`) |
 | `episode_nowplaying.py` / `music_nowplaying.py` / `movie_nowplaying.py` | Media HTML generators (import `kodi_np.rpc`) |
 
 ## Features
 
-- **Multi-Kodi Overview**: `/overview` wall showing playing / paused / idle / offline status for every configured server
-- **Jinja Templates**: Movie, episode, and music layouts live in `templates/` with media-specific Python handlers
+- **Multi-Kodi Overview**: `/overview` wall showing playing / paused / idle / offline / auth-failed status for every configured server (auto-refreshes every 5s)
+- **Jinja Templates**: Movie, episode, and music layouts live in `templates/` with shared side-panel partials
 - **Real-time Playback Detection**: Automatically detects when Kodi starts/stops playing media
-- **Playback State Monitoring**: Shows current play/pause state with visual indicators
-- **Interactive Playback Controls**: Play/pause icons with smooth fade transitions
+- **Playback State Monitoring**: Shows current play/pause state with visual indicators (status icon; not a remote control)
 - **Smart Timer Management**: Timer stops when paused and resyncs on resume
 - **Comprehensive Media Support**: Episodes, movies, and music with appropriate artwork
+- **Synced Lyrics (music)**: Karaoke-style highlighting from Kodi tags or LRCLib, with Album/Artist tab toggle
+- **Album/Artist metadata fallback**: When Kodi has no album/artist text, probes TheAudioDB (free key) then Wikipedia asynchronously after page load; cached per album/artist across soft track changes
+- **Lazy Cast Thumbnails**: Cast names render immediately; actor photos fade in after load
 - **Background Slideshow**: Multiple fanart images for enhanced visual experience
 - **Responsive Design**: Clean, modern interface that works on various screen sizes
 - **Blur Toggle Control**: Discreet button to switch between blurred and non-blurred overlay modes
@@ -302,9 +308,18 @@ Optional `KODI_HOST_LABEL_N` values appear in the server dropdown, idle message,
 
 ### Flask secret key (`FLASK_SECRET_KEY`)
 
-Used to sign Flask session cookies (for example the currently selected server). **The app works without setting one** — if unset, a random key is generated at startup. That is fine for a quick test, but the key changes on every container restart, so browser session cookies become invalid until the next request (the last selected server is still restored from `preferences.json` when possible).
+Used to sign Flask session cookies (selected server, and web login when
+`BASIC_AUTH` is enabled). **The app works without setting one** — if unset, a
+random key is generated at startup. That is intentional for easy LAN use: you
+do not need a secret to get started.
 
-For a stable key across restarts, generate one and put it in `.env`:
+Trade-off: the random key changes on every container restart, so browser session
+cookies become invalid (you may need to pick the server again, and you will need
+to sign in again if `BASIC_AUTH` is set). The last selected server is still
+restored from `preferences.json` when possible.
+
+For a stable key across restarts (recommended when using `BASIC_AUTH`), generate
+one and put it in `.env`:
 
 **PowerShell**
 
@@ -337,6 +352,31 @@ FLASK_SECRET_KEY=paste-the-generated-value-here
 
 Optional: `LOG_LEVEL` (`DEBUG`, `INFO`, `WARNING`, `ERROR`; default `INFO`) controls log verbosity. Set `LOG_FORMAT=json` for one-line JSON logs.
 
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+### Production runtime (Gunicorn)
+
+The Docker image runs **Gunicorn** with **one worker** and multiple threads:
+
+```text
+gunicorn --bind 0.0.0.0:6001 --workers 1 --threads 8 --timeout 180 kodi_np.app:app
+```
+
+Keep `--workers 1`. The now-playing cache, artwork state, and server backoff live
+in process memory. Multiple workers would not share that state and would cause
+inconsistent overview / now-playing results. Scale with threads (or a future
+shared store), not additional Gunicorn workers.
+
+Artwork HTTP downloads after Kodi `PrepareDownload` can run in a small thread
+pool. Set `ART_DOWNLOAD_WORKERS` to `1`–`4` (default `2`). RPC discovery stays
+serialized per Kodi host. Extra fanart variants load progressively after first
+paint via `/api/fanart` so the loading screen only waits on one primary fanart
+plus posters/logos.
+
+=======
+>>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
+>>>>>>> Stashed changes
 ### Optional web login
 
 Set `BASIC_AUTH` to `username:password` to enable the sleek sign-in page. Leave it

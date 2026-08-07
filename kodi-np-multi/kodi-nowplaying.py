@@ -25,11 +25,13 @@ from kodi_np.art import (
     apply_share_reuse,
     classify_art_buckets,
     cleanup_old_artwork_files,
+    download_fanart_variant,
     empty_share,
     ensure_share_file,
     is_artwork_filename,
     primary_artist_id,
     resolve_safe_child,
+    select_primary_fanart_key,
     share_art_filename,
 )
 from kodi_np.cache import (

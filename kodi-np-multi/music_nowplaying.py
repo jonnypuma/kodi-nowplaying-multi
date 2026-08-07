@@ -370,6 +370,34 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     logger.debug(f"Before HTML generation - fanart_variants length: {len(fanart_variants)}")
     logger.debug(f"Before HTML generation - fanart_variants content: {fanart_variants}")
 
+    lyrics_bootstrap = {
+        "artist": artist_names or "",
+        "title": title or "",
+        "album": album or "",
+        "duration": duration,
+        "kodi_lyrics": song_lyrics or "",
+    }
+    lyrics_bootstrap_json = json.dumps(lyrics_bootstrap).replace("<", "\\u003c")
+    music_meta_bootstrap = {
+        "artist": artist_names or "",
+        "album": album or "",
+        "album_id": details.get("albumid") if isinstance(details, dict) else None,
+        "artist_id": None,
+        "need_album": not bool(
+            ((album_details.get("description") if isinstance(album_details, dict) else "") or "").strip()
+        ),
+        "need_artist": not bool(
+            ((artist_details.get("description") if isinstance(artist_details, dict) else "") or "").strip()
+        ),
+    }
+    if isinstance(details, dict):
+        raw_artist = details.get("artistid")
+        if isinstance(raw_artist, list) and raw_artist:
+            music_meta_bootstrap["artist_id"] = raw_artist[0]
+        elif raw_artist is not None and not isinstance(raw_artist, list):
+            music_meta_bootstrap["artist_id"] = raw_artist
+    music_meta_bootstrap_json = json.dumps(music_meta_bootstrap).replace("<", "\\u003c")
+
     artist_names = html_escape(artist_names)
     album = html_escape(album)
     album_year = html_escape(album_year)
@@ -398,6 +426,12 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         if fanart_variants
         else "<!-- No fanart variants available -->"
     )
+    pending_items = []
+    art_session_id = session_id
+    if isinstance(details, dict):
+        pending_items = list(details.get("pending_fanarts") or [])
+        art_session_id = details.get("art_session_id") or session_id
+    fanart_pending_json = json.dumps({"session_id": art_session_id, "items": pending_items})
     poster_container_extra_class = " flip-enabled" if back_cover_url else ""
     discart_html = (
         f"<div class='discart-wrapper'><img class='discart' src='{discart_display_url}' /></div>"
@@ -456,15 +490,13 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     duration_display = _format_playback_time(duration, duration)
     paused_js = str(paused).lower()
     album_description_html = (
-        f"<div class='album-description' id='soft-album-description'><div class='music-badges'><span class='music-badge'>Album Description</span></div><p id='soft-album-description-text'>{album_description}</p></div>"
+        f"<div class='album-description' id='soft-album-description'><p id='soft-album-description-text'>{album_description}</p></div>"
         if album_description
-        else "<div class='album-description' id='soft-album-description' style='display:none'><div class='music-badges'><span class='music-badge'>Album Description</span></div><p id='soft-album-description-text'></p></div>"
+        else "<div class='album-description' id='soft-album-description' style='display:none'><p id='soft-album-description-text'></p></div>"
     )
     artist_bio_parts = []
     if artist_description:
-        artist_bio_parts.append(
-            "<div class='album-description' id='soft-artist-bio'><div class='music-badges'><span class='music-badge'>Artist Biography</span></div>"
-        )
+        artist_bio_parts.append("<div class='album-description' id='soft-artist-bio'>")
         if artist_born:
             artist_bio_parts.append(f"<p id='soft-artist-born'><strong>Born:</strong> {artist_born}</p>")
         if artist_genre:
@@ -472,7 +504,35 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         if artist_style:
             artist_bio_parts.append(f"<p><strong>Style:</strong> {', '.join(artist_style)}</p>")
         artist_bio_parts.append(f"<p id='soft-artist-bio-text'>{artist_description}</p></div>")
-    artist_bio_html = "".join(artist_bio_parts) if artist_bio_parts else "<div class='album-description' id='soft-artist-bio' style='display:none'><div class='music-badges'><span class='music-badge'>Artist Biography</span></div><p id='soft-artist-bio-text'></p></div>"
+    artist_bio_html = (
+        "".join(artist_bio_parts)
+        if artist_bio_parts
+        else "<div class='album-description' id='soft-artist-bio' style='display:none'><p id='soft-artist-bio-text'></p></div>"
+    )
+
+    music_info_panel_html = f"""
+            <div class="info-panel" id="music-info-panel">
+              <div class="info-panel-tabs" role="tablist" aria-label="Music details">
+                <button type="button" class="info-panel-tab" role="tab" data-panel="lyrics" aria-selected="false">Lyrics</button>
+                <button type="button" class="info-panel-tab" role="tab" data-panel="album" aria-selected="false">Album</button>
+                <button type="button" class="info-panel-tab" role="tab" data-panel="artist" aria-selected="false">Artist</button>
+              </div>
+              <div class="info-panel-pane" id="panel-lyrics" role="tabpanel" hidden>
+                <div class="lyrics-panel" id="lyrics-panel">
+                  <div class="lyrics-inner" id="lyrics-inner"></div>
+                  <div class="lyrics-empty" id="lyrics-empty">Loading lyrics…</div>
+                </div>
+              </div>
+              <div class="info-panel-pane" id="panel-album" role="tabpanel" hidden>
+                {album_description_html if album_description else '<div class="album-description" id="soft-album-description"><p id="soft-album-description-text" class="info-panel-empty">No album description available.</p></div>'}
+              </div>
+              <div class="info-panel-pane" id="panel-artist" role="tabpanel" hidden>
+                {artist_bio_html if artist_description else '<div class="album-description" id="soft-artist-bio"><p id="soft-artist-bio-text" class="info-panel-empty">No artist biography available.</p></div>'}
+              </div>
+            </div>
+            <script type="application/json" id="lyrics-bootstrap">{lyrics_bootstrap_json}</script>
+            <script type="application/json" id="music-meta-bootstrap">{music_meta_bootstrap_json}</script>
+    """
 
     # Wrap album art region for soft updates
     album_poster_html = f"<div id='soft-album-art'>{album_poster_html}</div>"
@@ -505,6 +565,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         paused_js=paused_js,
         fanart_debug_html=fanart_debug_html,
         fanart_slides_html=fanart_slides_html,
+        fanart_pending_json=fanart_pending_json,
         poster_container_extra_class=poster_container_extra_class,
         discart_html=discart_html,
         album_poster_html=album_poster_html,
@@ -527,7 +588,6 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         genre_badges_html=genre_badges_html,
         elapsed_display=elapsed_display,
         duration_display=duration_display,
-        album_description_html=album_description_html,
-        artist_bio_html=artist_bio_html,
+        music_info_panel_html=music_info_panel_html,
         soft_identity_json=soft_identity_json,
     )

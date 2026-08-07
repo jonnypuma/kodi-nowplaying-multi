@@ -189,6 +189,10 @@ def test_soft_update_song_same_album(app_module, patch_into):
     assert out["badges"]["disc"] == ""  # single-disc album: hide even when track has disc=1
     assert out["badges"]["title"] == "Track Two"
     assert out["identity"]["album_id"] == 10
+    assert "lyrics" in out
+    assert out["lyrics"]["title"] == "Track Two"
+    assert out["lyrics"]["artist"] == "Band"
+    assert out["lyrics"]["album"] == "Same Album"
 
 
 def test_soft_update_song_multi_disc_shows_badge(app_module, patch_into):

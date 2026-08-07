@@ -208,10 +208,10 @@ def build_nowplaying_html(progress_cb=None, session_id=None, as_payload=False):
                 build_share["album_id"] = albumid
                 if albumid:
                     if share_scope_matches(prior_share, "album", albumid) and prior_share.get("album_details"):
-                        details["album"] = prior_share["album_details"]
-                        build_share["album_details"] = prior_share["album_details"]
+                        album_details = prior_share["album_details"]
                         logger.debug("Reusing cached album metadata for albumid=%s", albumid)
                     else:
+                        album_details = {}
                         try:
                             update(30, "Loading album metadata")
                             album_response = kodi_rpc("AudioLibrary.GetAlbumDetails", {
@@ -219,22 +219,23 @@ def build_nowplaying_html(progress_cb=None, session_id=None, as_payload=False):
                                 "properties": ["title", "artist", "year", "rating", "fanart", "thumbnail", "description", "genre", "mood", "style", "theme", "albumduration", "playcount", "albumlabel", "compilation", "totaldiscs"]
                             })
                             if album_response and album_response.get("result"):
-                                album_details = album_response["result"].get("albumdetails", {})
-                                details["album"] = album_details
-                                build_share["album_details"] = album_details
+                                album_details = album_response["result"].get("albumdetails", {}) or {}
                                 logger.debug(f"Enhanced album details loaded")
                         except Exception as e:
                             logger.warning(f"Failed to get album details: {e}")
+                    # Online album text (TheAudioDB/Wikipedia) is loaded async after page render
+                    details["album"] = album_details
+                    build_share["album_details"] = album_details
                 
                 # Get artist details if we have artistid
                 artistid = primary_artist_id(song_details.get("artistid"))
                 build_share["artist_id"] = artistid
                 if artistid:
                     if share_scope_matches(prior_share, "artist", artistid) and prior_share.get("artist_details"):
-                        details["artist"] = prior_share["artist_details"]
-                        build_share["artist_details"] = prior_share["artist_details"]
+                        artist_details = prior_share["artist_details"]
                         logger.debug("Reusing cached artist metadata for artistid=%s", artistid)
                     else:
+                        artist_details = {}
                         try:
                             update(34, "Loading artist metadata")
                             artist_response = kodi_rpc("AudioLibrary.GetArtistDetails", {
@@ -242,12 +243,13 @@ def build_nowplaying_html(progress_cb=None, session_id=None, as_payload=False):
                                 "properties": ["fanart", "thumbnail", "description", "born", "formed", "died", "disbanded", "genre", "mood", "style", "yearsactive"]
                             })
                             if artist_response and artist_response.get("result"):
-                                artist_details = artist_response["result"].get("artistdetails", {})
-                                details["artist"] = artist_details
-                                build_share["artist_details"] = artist_details
+                                artist_details = artist_response["result"].get("artistdetails", {}) or {}
                                 logger.debug(f"Enhanced artist details loaded")
                         except Exception as e:
                             logger.warning(f"Failed to get artist details: {e}")
+                    # Online artist bio is loaded async after page render
+                    details["artist"] = artist_details
+                    build_share["artist_details"] = artist_details
                 
                 # Ensure basic item data is preserved (but don't overwrite detailed album/artist objects)
                 details.update({
@@ -312,6 +314,8 @@ def build_nowplaying_html(progress_cb=None, session_id=None, as_payload=False):
             downloaded_art = {}  # Empty artwork - page will still work
             share_out = empty_share()
 
+        pending_fanarts = list(share_out.get("pending_fanarts") or [])
+
         if playback_type in ("episode", "song"):
             for key in ("art_files", "art_sources", "tvshow_id", "season", "album_id", "artist_id"):
                 if share_out.get(key) is not None:
@@ -336,6 +340,14 @@ def build_nowplaying_html(progress_cb=None, session_id=None, as_payload=False):
         }
 
         display_title, overview_media_type = _format_overview_title(item)
+
+        # Attach pending fanarts for progressive slideshow hydration after paint
+        if not isinstance(details, dict):
+            details = {}
+        else:
+            details = dict(details)
+        details["pending_fanarts"] = pending_fanarts
+        details["art_session_id"] = session_id
 
         # Check if media type is unknown - if so, show fallback message
         from parser import infer_playback_type
@@ -591,7 +603,7 @@ def _soft_update_song(item, prev, prev_type, prior_share, active_server_id, elap
         "songid": item.get("id"),
         "properties": [
             "title", "album", "artist", "duration", "year", "albumid", "artistid",
-            "track", "disc", "bitrate", "channels", "samplerate",
+            "track", "disc", "bitrate", "channels", "samplerate", "lyrics",
         ],
     })
     song_details = {}
@@ -625,7 +637,8 @@ def _soft_update_song(item, prev, prev_type, prior_share, active_server_id, elap
 
     if same_artist and prior_share.get("artist_details"):
         artist_details = prior_share["artist_details"]
-    elif artist_id and artist_changed:
+    elif artist_id:
+        # Load when artist changed OR first time (missing from share)
         artist_response = kodi_rpc("AudioLibrary.GetArtistDetails", {
             "artistid": artist_id,
             "properties": ["description", "born", "genre", "style"],
@@ -633,7 +646,16 @@ def _soft_update_song(item, prev, prev_type, prior_share, active_server_id, elap
         if artist_response and artist_response.get("result"):
             artist_details = artist_response["result"].get("artistdetails", {})
 
+    # Enrich empty descriptions asynchronously on the client; keep Kodi text only here.
     art = {"cover": None, "back": None, "discart": None, "clearlogo": None}
+    merged = dict(prior_share or {})
+    merged["album_id"] = album_id
+    merged["artist_id"] = artist_id
+    if album_details:
+        merged["album_details"] = album_details
+    if artist_details:
+        merged["artist_details"] = artist_details
+
     if (album_changed or artist_changed) and active_server_id is not None:
         fingerprint = make_playback_fingerprint(item)
         session_id = cache_session_id_for(active_server_id, fingerprint) if fingerprint else uuid.uuid4().hex
@@ -662,14 +684,28 @@ def _soft_update_song(item, prev, prev_type, prior_share, active_server_id, elap
             art["discart"] = f"/media/{downloaded_art['cdart']}"
         if artist_changed and downloaded_art.get("clearlogo"):
             art["clearlogo"] = f"/media/{downloaded_art['clearlogo']}"
-        merged = dict(prior_share)
-        for key in ("art_files", "art_sources", "album_id", "artist_id", "album_details", "artist_details"):
+        if artist_changed:
+            fanart_urls = []
+            for key, value in downloaded_art.items():
+                if key.startswith("extrafanart"):
+                    fanart_urls.append(f"/media/{value}")
+            if not fanart_urls:
+                for fanart_key in (
+                    "fanart", "fanart1", "fanart2", "fanart3", "fanart4",
+                    "fanart5", "fanart6", "fanart7", "fanart8", "fanart9",
+                ):
+                    if downloaded_art.get(fanart_key):
+                        fanart_urls.append(f"/media/{downloaded_art[fanart_key]}")
+            art["fanart_slides"] = fanart_urls
+            art["fanart_pending"] = {
+                "session_id": session_id,
+                "items": list(share_out.get("pending_fanarts") or []),
+            }
+        for key in ("art_files", "art_sources", "album_id", "artist_id"):
             if share_out.get(key) is not None:
                 merged[key] = share_out[key]
-        if album_details:
-            merged["album_details"] = album_details
-        if artist_details:
-            merged["artist_details"] = artist_details
+
+    if active_server_id is not None:
         set_cache_entry(active_server_id, share=merged)
 
     title = song_details.get("title") or item.get("title") or ""
@@ -680,6 +716,7 @@ def _soft_update_song(item, prev, prev_type, prior_share, active_server_id, elap
         artist = song_details.get("artist") or ""
         if isinstance(artist, list):
             artist = ", ".join(artist)
+
     track = song_details.get("track") or 0
     disc = song_details.get("disc") or 0
     total_discs = int((album_details or {}).get("totaldiscs") or 1)
@@ -688,6 +725,12 @@ def _soft_update_song(item, prev, prev_type, prior_share, active_server_id, elap
     # Match music_nowplaying.py: only show disc badge for multi-disc albums
     disc_badge = f"Disc {disc}" if disc and disc > 0 and total_discs >= 2 else ""
     track_badge = f"Track {track:02d}" if track and track > 0 else ""
+    album_description = (album_details or {}).get("description") or ""
+    artist_bio = (artist_details or {}).get("description") or ""
+    prior_album_desc = ((prior_share or {}).get("album_details") or {}).get("description") or ""
+    prior_artist_bio = ((prior_share or {}).get("artist_details") or {}).get("description") or ""
+    refresh_album_text = bool(album_changed) or (bool(album_description) and not prior_album_desc)
+    refresh_artist_text = bool(artist_changed) or (bool(artist_bio) and not prior_artist_bio)
 
     return {
         "soft": True,
@@ -704,9 +747,13 @@ def _soft_update_song(item, prev, prev_type, prior_share, active_server_id, elap
         "album_year": album_year,
         "album_changed": bool(album_changed),
         "artist_changed": bool(artist_changed),
-        "album_description": (album_details or {}).get("description") or "",
-        "artist_bio": (artist_details or {}).get("description") or "",
+        "refresh_album_text": refresh_album_text,
+        "refresh_artist_text": refresh_artist_text,
+        "album_description": album_description,
+        "artist_bio": artist_bio,
         "artist_born": (artist_details or {}).get("born") or "",
+        "need_album_meta": not bool((album_description or "").strip()),
+        "need_artist_meta": not bool((artist_bio or "").strip()),
         "art": art,
         "badges": {
             "album": f"{album}" + (f" ({album_year})" if album_year else "") if album else "",
@@ -717,6 +764,13 @@ def _soft_update_song(item, prev, prev_type, prior_share, active_server_id, elap
         "elapsed": elapsed,
         "duration": duration,
         "paused": paused,
+        "lyrics": {
+            "artist": artist,
+            "title": title,
+            "album": album,
+            "duration": duration,
+            "kodi_lyrics": song_details.get("lyrics") or "",
+        },
         "identity": {
             "media_type": "song",
             "item_id": f"song_{item_id}" if item_id is not None else "",

@@ -10,7 +10,6 @@ import threading
 import time
 import urllib.parse
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import requests
@@ -21,90 +20,6 @@ from kodi_np.rpc import kodi_rpc
 from kodi_np.servers import get_active_server
 
 logger = logging.getLogger("kodi.nowplaying")
-
-
-def _art_download_workers() -> int:
-    try:
-        n = int(getattr(_c, "ART_DOWNLOAD_WORKERS", 2))
-    except (TypeError, ValueError):
-        n = 2
-    return max(1, min(4, n))
-
-
-def _http_get_to_file(image_url: str, local_path: str, server: dict, timeout: int = 5) -> None:
-    """Download one URL to a local path (raises on failure)."""
-    if image_url.startswith(server.get("host") or ""):
-        response = requests.get(image_url, auth=server.get("auth"), timeout=timeout)
-    else:
-        response = requests.get(image_url, timeout=timeout)
-    response.raise_for_status()
-    with open(local_path, "wb") as handle:
-        handle.write(response.content)
-
-
-def _download_urls_parallel(jobs, server, size_ok_fn=None):
-    """Download prepared HTTP jobs in a small pool.
-
-    Each job: {art_key, image_url, local_path, filename, raw_path}
-    Returns list of (job, success: bool).
-    PrepareDownload must already have been done; this only parallelizes GETs.
-    """
-    if not jobs:
-        return []
-    workers = min(_art_download_workers(), len(jobs))
-
-    def _one(job):
-        key = job.get("art_key") or "?"
-        try:
-            _http_get_to_file(job["image_url"], job["local_path"], server)
-            if size_ok_fn and not size_ok_fn(job["local_path"], key):
-                return job, False
-            return job, True
-        except Exception as exc:
-            logger.error("Failed to download %s: %s", key, exc)
-            return job, False
-
-    if workers <= 1:
-        return [_one(job) for job in jobs]
-
-    results = []
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(_one, job) for job in jobs]
-        for fut in as_completed(futures):
-            results.append(fut.result())
-    return results
-
-
-def select_primary_fanart_key(media_type, fanart_variants: dict, downloaded: dict) -> str | None:
-    """Pick which fanart key should be on the critical path for first paint."""
-    if not fanart_variants and not any(
-        k.startswith(("fanart", "extrafanart")) for k in downloaded
-    ):
-        return None
-    if media_type == "song":
-        for key in fanart_variants:
-            if key.startswith("extrafanart"):
-                return key
-        for key in ("fanart", "fanart1", "fanart2", "fanart3", "fanart4",
-                    "fanart5", "fanart6", "fanart7", "fanart8", "fanart9"):
-            if key in fanart_variants or key in downloaded:
-                return key
-        for key in fanart_variants:
-            return key
-        return None
-    # movie / episode / other: prefer main fanart
-    if "fanart" in fanart_variants or "fanart" in downloaded:
-        return "fanart"
-    for key in ("fanart1", "fanart2", "fanart3", "fanart4", "fanart5",
-                "fanart6", "fanart7", "fanart8", "fanart9"):
-        if key in fanart_variants or key in downloaded:
-            return key
-    for key in fanart_variants:
-        if key.startswith("extrafanart"):
-            return key
-    for key in fanart_variants:
-        return key
-    return None
 
 def empty_share():
     return {
@@ -1054,19 +969,12 @@ def _prepare_and_download_art_locked(item, session_id, server, progress_cb=None,
         return "Loading artwork"
 
     art_tasks = []
-    early_primary = select_primary_fanart_key(media_type, fanart_variants, downloaded)
     for art_type in _c.ART_TYPES:
         if art_map.get(art_type) and art_type not in downloaded:
-            # Music may prefer extrafanart as first slide — skip main fanart on critical path.
-            if (
-                art_type == "fanart"
-                and early_primary
-                and early_primary != "fanart"
-                and str(early_primary).startswith("extrafanart")
-            ):
-                continue
             art_tasks.append(("art", art_type))
-    # Extra fanart variants are deferred after first paint — do not count them here.
+    for variant_key in fanart_variants.keys():
+        if variant_key != "fanart" and variant_key not in downloaded:
+            art_tasks.append(("fanart", variant_key))
 
     total_tasks = len(art_tasks)
     task_index = 0
@@ -1080,18 +988,8 @@ def _prepare_and_download_art_locked(item, session_id, server, progress_cb=None,
     if progress_cb and total_tasks == 0:
         progress_cb(1, 1, "Loading artwork")
 
-    http_jobs = []
-    use_parallel = _art_download_workers() > 1
-
     for art_type in _c.ART_TYPES:
         if art_type in downloaded:
-            continue
-        if (
-            art_type == "fanart"
-            and early_primary
-            and early_primary != "fanart"
-            and str(early_primary).startswith("extrafanart")
-        ):
             continue
         raw_path = art_map.get(art_type)
         logger.debug(f"Processing art_type: {art_type}, raw_path: {raw_path}")
@@ -1276,30 +1174,16 @@ def _prepare_and_download_art_locked(item, session_id, server, progress_cb=None,
         filename = _target_filename(art_type)
         local_path = os.path.join(_c.ART_TMP_DIR, filename)
 
-        if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
-            if _fanart_size_ok(local_path, art_type):
-                _commit_art(art_type, filename, raw_path)
-                logger.debug(f"Reusing cached artwork {local_path}")
-                if progress_cb and total_tasks:
-                    update_art_progress(label)
-                continue
-            try:
-                os.remove(local_path)
-            except Exception:
-                pass
-
-        if use_parallel:
-            http_jobs.append({
-                "art_key": art_type,
-                "image_url": image_url,
-                "local_path": local_path,
-                "filename": filename,
-                "raw_path": raw_path,
-                "label": label,
-            })
-            continue
-
         try:
+            if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+                if _fanart_size_ok(local_path, art_type):
+                    _commit_art(art_type, filename, raw_path)
+                    logger.debug(f"Reusing cached artwork {local_path}")
+                    continue
+                try:
+                    os.remove(local_path)
+                except Exception:
+                    pass
             # Use authentication only for Kodi internal URLs
             if image_url.startswith(server['host']):
                 logger.debug(f"Downloading with auth: {image_url}")
@@ -1487,69 +1371,198 @@ def _prepare_and_download_art_locked(item, session_id, server, progress_cb=None,
         if progress_cb and total_tasks:
             update_art_progress(label)
 
-    if http_jobs:
-        for job, ok in _download_urls_parallel(http_jobs, server, _fanart_size_ok):
-            if ok:
-                _commit_art(job["art_key"], job["filename"], job.get("raw_path"))
-                logger.info("Downloaded %s to %s", job["art_key"], job["local_path"])
-            if progress_cb and total_tasks:
-                update_art_progress(job.get("label") or "Loading artwork")
-
-    # Progressive fanart: ensure one primary on critical path; defer the rest.
-    primary_key = select_primary_fanart_key(media_type, fanart_variants, downloaded)
-
-    def _try_reuse_or_download_one(variant_key, variant_path):
-        """Reuse local/share file or download a single fanart for first paint."""
-        if variant_key in downloaded:
-            return True
-        filename = _target_filename(variant_key)
-        local_path = os.path.join(_c.ART_TMP_DIR, filename)
-        if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
-            if _fanart_size_ok(local_path, variant_key):
-                _commit_art(variant_key, filename, variant_path)
-                return True
-            try:
-                os.remove(local_path)
-            except Exception:
-                pass
-        image_url = None
-        if variant_path and (str(variant_path).startswith("http://") or str(variant_path).startswith("https://")):
-            image_url = variant_path
-        else:
-            image_url = _kodi_image_download_url(variant_path, server)
-        if not image_url:
-            logger.debug("No download URL for primary fanart %s", variant_key)
-            return False
-        try:
-            _http_get_to_file(image_url, local_path, server)
-            if _fanart_size_ok(local_path, variant_key):
-                _commit_art(variant_key, filename, variant_path)
-                logger.info("Downloaded primary fanart %s to %s", variant_key, local_path)
-                return True
-            logger.info("Primary fanart %s filtered by size threshold", variant_key)
-        except Exception as exc:
-            logger.error("Failed to download primary fanart %s: %s", variant_key, exc)
-        return False
-
-    if primary_key and primary_key not in downloaded and primary_key in fanart_variants:
-        _try_reuse_or_download_one(primary_key, fanart_variants[primary_key])
-
-    pending_fanarts = []
-    for variant_key, variant_path in fanart_variants.items():
-        if variant_key in downloaded:
-            continue
-        filename = _target_filename(variant_key)
-        local_path = os.path.join(_c.ART_TMP_DIR, filename)
-        if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
-            if _fanart_size_ok(local_path, variant_key):
-                _commit_art(variant_key, filename, variant_path)
+    # Process fanart variants for slideshow
+    if len(fanart_variants) > 1:
+        logger.debug(f"Processing {len(fanart_variants)} fanart variants for slideshow")
+        
+        # Download additional fanart variants
+        for variant_key, variant_path in fanart_variants.items():
+            if variant_key == "fanart":
+                continue  # Skip the main fanart as it's already processed
+            if variant_key in downloaded:
                 continue
-        pending_fanarts.append({"key": variant_key, "path": variant_path})
-
-    share_out["pending_fanarts"] = pending_fanarts
+            label = "Loading fanart"
+                
+            try:
+                # Prepare download for this fanart variant
+                # Handle different path formats
+                if variant_path.startswith("image://"):
+                    logger.debug(f"Processing fanart variant {variant_key}: {variant_path}")
+                    
+                    # Handle artist information paths with fallback logic
+                    if "ArtistInformation" in variant_path:
+                        logger.debug(f"Processing artist information path for {variant_key}: {variant_path}")
+                        
+                        # Extract the artist name and filename from the path
+                        original_path = urllib.parse.unquote(variant_path[len("image://"):])
+                        if original_path.endswith("/"):
+                            original_path = original_path[:-1]
+                        
+                        # Extract artist name from path like U:\Kodi\ArtistInformation\AURORA\fanart1.jpg
+                        path_parts = original_path.split("\\")
+                        if len(path_parts) >= 4:
+                            artist_name = path_parts[3]  # AURORA
+                            filename = path_parts[-1]    # fanart1.jpg
+                            
+                            # Get the artist folder path from the current file
+                            current_file = item.get("file", "")
+                            if _is_remote_song_path(current_file):
+                                file_parts = current_file.split("/")
+                                if "Music" in file_parts:
+                                    music_index = file_parts.index("Music")
+                                    if music_index + 1 < len(file_parts):
+                                        artist_folder = file_parts[music_index + 1]
+                                        
+                                        # Try multiple fallback paths with different formats
+                                        fallback_paths = []
+                                        
+                                        # Build base path from current file's path
+                                        file_parts = current_file.split("/")
+                                        if "Music" in file_parts:
+                                            music_index = file_parts.index("Music")
+                                            base_path = "/".join(file_parts[:music_index + 1])  # Everything up to and including "Music"
+                                        
+                                        # 1. Try direct artist folder path with original extension
+                                        fallback_paths.append(f"{base_path}/{artist_folder}/{filename}")
+                                        
+                                        # 2. Try different file extensions (jpg, jpeg, png)
+                                        base_filename = filename.rsplit('.', 1)[0] if '.' in filename else filename
+                                        for ext in ['jpg', 'jpeg', 'png']:
+                                            fallback_paths.append(f"{base_path}/{artist_folder}/{base_filename}.{ext}")
+                                        
+                                        # 3. Try extrafanart folder with original extension
+                                        fallback_paths.append(f"{base_path}/{artist_folder}/extrafanart/{filename}")
+                                        
+                                        # 4. Try extrafanart folder with different extensions
+                                        for ext in ['jpg', 'jpeg', 'png']:
+                                            fallback_paths.append(f"{base_path}/{artist_folder}/extrafanart/{base_filename}.{ext}")
+                                        
+                                        # Try each fallback path
+                                        for fallback_path in fallback_paths:
+                                            image_protocol_path = f"image://{urllib.parse.quote(fallback_path, safe='')}/"
+                                            logger.debug(f"Trying fallback path: {image_protocol_path}")
+                                            
+                                            response = kodi_rpc("Files.PrepareDownload", {"path": image_protocol_path})
+                                            if response and response.get("result") and not response.get("error"):
+                                                details = response.get("result", {}).get("details", {})
+                                                token = details.get("token")
+                                                path = details.get("path")
+                                                
+                                                if token:
+                                                    basename = _art_path_basename(fallback_path)
+                                                    image_url = f"{server['host']}/vfs/{token}/{urllib.parse.quote(basename)}"
+                                                elif path:
+                                                    image_url = f"{server['host']}/{path}"
+                                                else:
+                                                    continue
+                                                
+                                                # Download the fanart variant
+                                                filename_local = _target_filename(variant_key)
+                                                local_path = os.path.join(_c.ART_TMP_DIR, filename_local)
+                                                
+                                                try:
+                                                    r = requests.get(image_url, auth=server['auth'], timeout=5)
+                                                    r.raise_for_status()
+                                                    with open(local_path, "wb") as f:
+                                                        f.write(r.content)
+                                                    if _fanart_size_ok(local_path, variant_key):
+                                                        _commit_art(variant_key, filename_local, variant_path)
+                                                        logger.info(f"Downloaded {variant_key} from fallback path to {local_path}")
+                                                        break  # Success, exit fallback loop
+                                                    logger.info(f"Fanart {variant_key} filtered by size threshold")
+                                                except Exception as e:
+                                                    logger.debug(f"Failed to download from fallback path: {e}")
+                                                    continue
+                                            else:
+                                                logger.debug(f"Fallback path failed: {image_protocol_path}")
+                                    else:
+                                        logger.debug(f"Could not find artist folder in current file path")
+                                else:
+                                    logger.debug(f"Could not find Music in current file path")
+                            else:
+                                logger.debug(f"Current file is not an NFS path")
+                        else:
+                            logger.debug(f"Could not parse artist information path: {original_path}")
+                    
+                    # Standard image protocol path handling
+                    response = kodi_rpc("Files.PrepareDownload", {"path": variant_path})
+                    if response and response.get("result") and not response.get("error"):
+                        details = response.get("result", {}).get("details", {})
+                        token = details.get("token")
+                        path = details.get("path")
+                        
+                        if token:
+                            # Extract the original path from the image:// protocol
+                            original_path = urllib.parse.unquote(variant_path[len("image://"):])
+                            if original_path.endswith("/"):
+                                original_path = original_path[:-1]
+                            basename = os.path.basename(original_path)
+                            image_url = f"{server['host']}/vfs/{token}/{urllib.parse.quote(basename)}"
+                        elif path:
+                            image_url = f"{server['host']}/{path}"
+                        else:
+                            continue
+                        
+                        # Download the fanart variant
+                        filename = _target_filename(variant_key)
+                        local_path = os.path.join(_c.ART_TMP_DIR, filename)
+                        
+                        try:
+                            r = requests.get(image_url, auth=server['auth'], timeout=5)
+                            r.raise_for_status()
+                            with open(local_path, "wb") as f:
+                                f.write(r.content)
+                            if _fanart_size_ok(local_path, variant_key):
+                                _commit_art(variant_key, filename, variant_path)
+                                logger.info(f"Downloaded {variant_key} to {local_path}")
+                            else:
+                                logger.info(f"Fanart {variant_key} filtered by size threshold")
+                        except Exception as e:
+                            logger.error(f"Failed to download {variant_key}: {e}")
+                    else:
+                        logger.debug(f"Failed to prepare download for {variant_key}: {response}")
+                elif variant_path.startswith("nfs://"):
+                    # Direct NFS path
+                    response = kodi_rpc("Files.PrepareDownload", {"path": variant_path})
+                    if response and response.get("result") and not response.get("error"):
+                        details = response.get("result", {}).get("details", {})
+                        token = details.get("token")
+                        path = details.get("path")
+                        
+                        if token:
+                            basename = os.path.basename(variant_path)
+                            image_url = f"{server['host']}/vfs/{token}/{urllib.parse.quote(basename)}"
+                        elif path:
+                            image_url = f"{server['host']}/{path}"
+                        else:
+                            continue
+                        
+                        # Download the fanart variant
+                        filename = _target_filename(variant_key)
+                        local_path = os.path.join(_c.ART_TMP_DIR, filename)
+                        
+                        try:
+                            r = requests.get(image_url, auth=server['auth'], timeout=5)
+                            r.raise_for_status()
+                            with open(local_path, "wb") as f:
+                                f.write(r.content)
+                            if _fanart_size_ok(local_path, variant_key):
+                                _commit_art(variant_key, filename, variant_path)
+                                logger.info(f"Downloaded {variant_key} to {local_path}")
+                            else:
+                                logger.info(f"Fanart {variant_key} filtered by size threshold")
+                        except Exception as e:
+                            logger.error(f"Failed to download {variant_key}: {e}")
+                            
+            except Exception as e:
+                logger.error(f"Failed to process fanart variant {variant_key}: {e}")
+            if progress_cb and total_tasks:
+                update_art_progress(label)
+    
+    # Final debug logging
     final_fanart_count = len([k for k in downloaded.keys() if k.startswith(("fanart", "extrafanart"))])
-    logger.debug("Final downloaded fanart count: %s (pending=%s)", final_fanart_count, len(pending_fanarts))
-    logger.debug("Downloaded fanart keys: %s", [k for k in downloaded.keys() if k.startswith(("fanart", "extrafanart"))])
+    logger.debug(f"Final downloaded fanart count: {final_fanart_count}")
+    logger.debug(f"Downloaded fanart keys: {[k for k in downloaded.keys() if k.startswith(('fanart', 'extrafanart'))]}")
     
     return downloaded, share_out
 
@@ -1600,143 +1613,6 @@ def cleanup_old_artwork_files():
             logger.info(f"Artwork cleanup removed {removed} files")
     except Exception as e:
         logger.debug(f"Artwork cleanup failed: {e}")
-
-def download_fanart_variant(path: str, key: str, session_id: str, server_id=None):
-    """Download one deferred fanart after first paint. Returns local filename or None.
-
-    Uses the per-server art lock. Prefers share filenames when cache share identity
-    is available (episode tvshow / song artist); otherwise session-scoped files.
-    """
-    if not path or not isinstance(path, str) or not key or not isinstance(key, str):
-        return None
-    if not session_id or not isinstance(session_id, str):
-        return None
-    # Sanitize key for filenames
-    safe_key = re.sub(r"[^A-Za-z0-9_.-]", "_", key)[:80]
-    if not safe_key.startswith(("fanart", "extrafanart")):
-        return None
-
-    server = get_active_server() if server_id is None else _c.KODI_SERVERS.get(server_id)
-    if not server:
-        return None
-    sid = server.get("id")
-
-    prefs = load_preferences()
-    try:
-        min_fanart_kb = int(prefs.get("fanartMinSizeKB", 200))
-    except (TypeError, ValueError):
-        min_fanart_kb = 200
-    min_fanart_bytes = max(0, min_fanart_kb) * 1024
-
-    def _size_ok(local_path: str) -> bool:
-        if min_fanart_bytes <= 0:
-            return True
-        try:
-            size = os.path.getsize(local_path)
-            if size >= min_fanart_bytes:
-                return True
-            os.remove(local_path)
-            return False
-        except Exception:
-            return True
-
-    with _art_lock_for(sid):
-        filename = f"{session_id}_{safe_key}.jpg"
-        # Prefer share file when we know show/artist identity from cache
-        try:
-            from kodi_np.cache import get_cache_entry, set_cache_entry
-            entry = get_cache_entry(sid) or {}
-            share = dict(entry.get("share") or empty_share())
-            tvshow_id = share.get("tvshow_id")
-            artist_id = share.get("artist_id")
-            if tvshow_id is not None:
-                filename = share_art_filename(sid, "tvshow", tvshow_id, safe_key)
-            elif artist_id is not None and safe_key.startswith(("fanart", "extrafanart")):
-                filename = share_art_filename(sid, "artist", artist_id, safe_key)
-        except Exception:
-            share = None
-            entry = None
-
-        local_path = os.path.join(_c.ART_TMP_DIR, filename)
-        if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
-            if _size_ok(local_path):
-                return filename
-            try:
-                os.remove(local_path)
-            except Exception:
-                pass
-
-        image_url = None
-        if path.startswith("http://") or path.startswith("https://"):
-            image_url = path
-        else:
-            image_url = _kodi_image_download_url(path, server)
-        if not image_url:
-            return None
-        try:
-            _http_get_to_file(image_url, local_path, server, timeout=8)
-            if not _size_ok(local_path):
-                return None
-            # Persist into share cache art_files when applicable
-            try:
-                if share is not None and entry is not None:
-                    scope = "tvshow" if share.get("tvshow_id") is not None else (
-                        "artist" if share.get("artist_id") is not None else None
-                    )
-                    if scope:
-                        share.setdefault("art_files", {}).setdefault(scope, {})[safe_key] = filename
-                        share.setdefault("art_sources", {}).setdefault(scope, {})[safe_key] = normalize_art_source(path)
-                        set_cache_entry(sid, share=share)
-            except Exception as exc:
-                logger.debug("fanart share cache update skipped: %s", exc)
-            logger.debug("Downloaded deferred fanart %s to %s", safe_key, local_path)
-            return filename
-        except Exception as exc:
-            logger.debug("Deferred fanart download failed for %s: %s", safe_key, exc)
-            return None
-
-
-def download_cast_thumbnail(thumbnail_path: str, server_id=None):
-    """Download one cast thumbnail on demand. Returns local filename or None.
-
-    Does not block now-playing page builds — call from a lazy API after first paint.
-    """
-    if not thumbnail_path or not isinstance(thumbnail_path, str):
-        return None
-    # Skip Kodi default placeholders
-    lowered = thumbnail_path.lower()
-    if "defaultactor" in lowered or "defaultimage" in lowered:
-        return None
-
-    server = get_active_server() if server_id is None else _c.KODI_SERVERS.get(server_id)
-    if not server:
-        return None
-
-    digest = hashlib.md5(normalize_art_source(thumbnail_path).encode("utf-8")).hexdigest()
-    filename = f"cast_{digest}_actor.jpg"
-    local_path = _c.ART_TMP_PATH / filename
-    if local_path.exists() and local_path.stat().st_size > 0:
-        return filename
-
-    image_url = _kodi_image_download_url(thumbnail_path, server)
-    if not image_url:
-        return None
-    try:
-        if server.get("auth"):
-            response = requests.get(image_url, auth=server["auth"], timeout=8)
-        else:
-            response = requests.get(image_url, timeout=8)
-        response.raise_for_status()
-        if not response.content:
-            return None
-        with open(local_path, "wb") as handle:
-            handle.write(response.content)
-        logger.debug("Downloaded cast thumb to %s", local_path)
-        return filename
-    except Exception as exc:
-        logger.debug("Cast thumb download failed: %s", exc)
-        return None
-
 
 def resolve_safe_child(base_dir: Path, filename: str):
     if not filename or "/" in filename or "\\" in filename:

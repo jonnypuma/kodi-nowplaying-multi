@@ -67,9 +67,13 @@
         .content {
           position: relative;
           z-index: 1;
-          padding: 80px 40px 40px 40px;
+          padding: 5px 32px 24px 28px;
           display: flex;
-          gap: 40px;
+          gap: clamp(24px, 3vw, 48px);
+          align-items: flex-start;
+          width: 100%;
+          max-width: 100vw;
+          box-sizing: border-box;
           color: white;
           text-shadow:
             -1px -1px 0 rgba(0,0,0,0.95),
@@ -83,31 +87,44 @@
              0    2px 4px rgba(0,0,0,0.9);
         }
         .poster-container {
+          --discart-peek: clamp(56px, 8vh, 80px);
+          --poster-drop: 45px;
           position: relative;
           overflow: visible;
-          height: 420px;
+          height: calc(clamp(300px, 56vh, 500px) + var(--poster-drop));
           width: auto;
-          margin-top: 80px;
+          /* Lift poster so discart can peek above it while staying inside content */
+          margin-top: var(--discart-peek);
+          flex: 0 0 auto;
         }
         .poster {
-          height: 420px;
+          height: clamp(300px, 56vh, 500px);
+          width: auto;
           border-radius: 8px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.6);
           position: relative;
           z-index: 2;
           cursor: zoom-in;
+          /* Drop poster only — exposes more discart above it */
+          margin-top: var(--poster-drop);
         }
         .discart-wrapper {
           position: absolute;
-          top: -155px;
+          /* top of discart aligns with content padding (5px below overlay edge) */
+          top: calc(-1 * var(--discart-peek));
           left: 50%;
           transform: translateX(-50%);
           z-index: 1;
-          height: 210px;
-          width: 280px;
+          height: clamp(180px, 28vh, 250px);
+          width: clamp(180px, 28vh, 250px);
+          pointer-events: none;
         }
         .discart {
-          width: 280px;
+          width: clamp(180px, 28vh, 250px);
+          height: clamp(180px, 28vh, 250px);
+          aspect-ratio: 1 / 1;
+          object-fit: cover;
+          border-radius: 50%;
           animation: spin 6s linear infinite;
           animation-play-state: running;
           opacity: 1;
@@ -126,7 +143,7 @@
           gap: 12px;
           margin-top: 6px;
           width: 100%;
-          max-width: 600px;
+          max-width: none;
           box-sizing: border-box;
         }
         .progress-container {
@@ -246,16 +263,17 @@
         .banner {
           display: block;
           margin-bottom: 10px;
-          max-width: 360px;
+          max-width: min(100%, 720px);
           width: 100%;
         }
         .logo {
           display: block;
-          margin-bottom: 10px;
-          height: 150px;
+          margin: 0 0 10px 0;
+          height: clamp(120px, 16vh, 190px);
+          max-width: min(100%, 780px);
           width: auto;
           object-fit: contain;
-          object-position: left center;
+          object-position: left top;
         }
         .clearart {
           display: block;
@@ -435,7 +453,7 @@
           }
         }
         .content {
-          margin-top: 100px;
+          margin-top: 90px;
           transition: margin-top 0.5s ease-in-out;
         }
         .marquee {
@@ -445,7 +463,7 @@
           transform: translateY(-100%);
         }
         .content.no-marquee {
-          margin-top: 20px;
+          margin-top: 16px;
         }
         
         /* Blur Toggle Button */
@@ -546,7 +564,7 @@
           z-index: 1500;
           transition: right 0.5s ease-in-out;
           overflow: visible;
-          padding: 20px;
+          padding: 12px;
           box-shadow: -5px 0 20px rgba(0, 0, 0, 0.5);
           box-sizing: border-box;
         }
@@ -613,8 +631,6 @@
         
         
         .side-panel-section {
-          margin-bottom: 25px;
-          padding-bottom: 20px;
           border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
         
@@ -622,10 +638,10 @@
           border-bottom: none;
         }
         
-        .side-panel-section label {
+        .side-panel-section label,
+        .side-panel-item label {
           display: block;
           color: rgba(255, 255, 255, 0.9);
-          margin-bottom: 10px;
           font-size: 14px;
         }
         
@@ -633,7 +649,6 @@
           display: flex;
           align-items: center;
           gap: 15px;
-          margin-bottom: 15px;
         }
         
         .connection-status {
@@ -731,7 +746,7 @@
         
         /* Slider Styles */
         .slider-container {
-          margin-top: 10px;
+          margin-top: 0;
         }
         
         .slider {
@@ -1391,32 +1406,31 @@
                 lastPausedState = currentPaused;
               }
               
-              // Check for playback state change (start/stop)
+              // Check for playback state / item changes
               if (lastPlaybackState === null) {
                 lastPlaybackState = currentState;
-                lastItemId = currentItemId;
+                if (currentItemId) lastItemId = currentItemId;
                 lastPausedState = currentPaused;
                 lastAudioLang = currentAudioLang;
                 lastSubtitleLang = currentSubtitleLang;
                 updatePlaybackButton(currentPaused);
                 console.log(`[DEBUG] Initial state set: lastPlaybackState=${lastPlaybackState}, lastItemId=${lastItemId}, lastPausedState=${lastPausedState}, audio=${lastAudioLang}, subtitle=${lastSubtitleLang}`);
-              } else if (currentState !== lastPlaybackState) {
-                // Only redirect if playback stops (true -> false), not when it starts (false -> true)
-                // When it starts, we're already on the nowplaying page
+              } else {
+                // Detect item changes whenever playing — including after a brief stop.
+                // Keep lastItemId while idle so resume with a different item is not missed.
+                const knownItemId = lastItemId;
+                if (isPlaying && currentItemId && knownItemId && currentItemId !== knownItemId) {
+                  console.log(`[DEBUG] Item changed from ${knownItemId} to ${currentItemId}`);
+                  document.body.classList.add('fade-out');
+                  setTimeout(() => {
+                    window.location.href = '/loading';
+                  }, 800);
+                  lastItemId = currentItemId;
+                } else if (isPlaying && currentItemId) {
+                  lastItemId = currentItemId;
+                }
                 lastPlaybackState = currentState;
               }
-              // Check for item change (new track/episode while playing)
-              else if (currentState && currentItemId && lastItemId && currentItemId !== lastItemId) {
-                console.log(`[DEBUG] Item changed from ${lastItemId} to ${currentItemId}`);
-                document.body.classList.add('fade-out');
-                setTimeout(() => {
-                  window.location.href = '/loading'; // Show loading screen then reload
-                }, 800);
-              }
-              
-              // Always update tracking variables at the end
-              lastPlaybackState = currentState;
-              lastItemId = currentItemId;
             })
             .catch(error => {
               console.error('Polling error:', error);
@@ -2059,38 +2073,34 @@
         // Fanart slideshow functionality
         setTimeout(function() {
           let currentFanartIndex = 0;
-          const fanartSlides = document.querySelectorAll('.fanart-slide');
-          const totalFanarts = fanartSlides.length;
-          
-          console.log(`[DEBUG] Found ${totalFanarts} fanart slides`);
-          
+
           function cycleFanarts() {
+            const fanartSlides = document.querySelectorAll('.fanart-slide');
+            const totalFanarts = fanartSlides.length;
             if (totalFanarts <= 1) return;
-            
-            console.log(`[DEBUG] Cycling fanarts - current: ${currentFanartIndex}, next: ${(currentFanartIndex + 1) % totalFanarts}`);
-            
-            const currentSlide = fanartSlides[currentFanartIndex];
-            currentSlide.classList.remove('active');
-            currentSlide.classList.add('fade-out');
-            
+
+            const currentSlide = fanartSlides[currentFanartIndex % totalFanarts];
+            if (currentSlide) {
+              currentSlide.classList.remove('active');
+              currentSlide.classList.add('fade-out');
+            }
+
             currentFanartIndex = (currentFanartIndex + 1) % totalFanarts;
-            
+
             const nextSlide = fanartSlides[currentFanartIndex];
-            nextSlide.classList.remove('fade-out');
-            nextSlide.classList.add('active');
-            
-            console.log(`[DEBUG] Now showing fanart ${currentFanartIndex}`);
+            if (nextSlide) {
+              nextSlide.classList.remove('fade-out');
+              nextSlide.classList.add('active');
+            }
           }
-          
-          // Start slideshow if we have multiple fanarts
-          if (totalFanarts > 1) {
-            // Store cycleFanarts globally so it can be accessed by updateFanartInterval
-            window.cycleFanarts = cycleFanarts;
+
+          window.cycleFanarts = cycleFanarts;
+          const initialCount = document.querySelectorAll('.fanart-slide').length;
+          if (initialCount > 1) {
             const savedFanartInterval = localStorage.getItem('fanartInterval') || '20';
-            console.log(`[DEBUG] Starting fanart slideshow with ${savedFanartInterval} second intervals`);
             fanartInterval = setInterval(cycleFanarts, parseInt(savedFanartInterval) * 1000);
-          } else {
-            console.log('[DEBUG] Not enough fanarts for slideshow');
+            window._fanartSlideshowTimer = fanartInterval;
+            window._fanartSlideshowStarted = true;
           }
         }, 100); // Wait 100ms for DOM to be ready
         
@@ -2159,6 +2169,7 @@
       <div class="fanart-container">
         {{ fanart_slides_html }}
       </div>
+      <script type="application/json" id="fanart-pending">{{ fanart_pending_json|safe }}</script>
       
       <div class="marquee">
         <div class="marquee-text"><span class="letter">N</span><span class="letter">O</span><span class="letter">W</span><span class="letter">&nbsp;</span><span class="letter">P</span><span class="letter">L</span><span class="letter">A</span><span class="letter">Y</span><span class="letter">I</span><span class="letter">N</span><span class="letter">G</span></div>
@@ -2172,13 +2183,16 @@
           {{ poster_html }}
           <!-- Clearart removed as requested -->
         </div>
-        <div>
+        <div class="meta-column">
+          <div class="meta-scroll">
           {{ title_banner_html }}
           {{ tagline_html }}
           {{ release_year_html }}
           {{ director_html }}
           {{ cast_html }}
           {{ plot_html }}
+          </div>
+          <div class="meta-footer">
           <div class="badges">
             {{ rating_html }}
             {{ imdb_badge_html }}
@@ -2210,9 +2224,13 @@
               </div>
             </div>
           </div>
+          </div>
         </div>
       </div>
       
+<<<<<<< HEAD
+      {% include 'partials/side_panel.html' %}
+=======
       <!-- Side Panel -->
       <div class="side-panel" id="sidePanel">
         <!-- Side Panel Toggle Button -->
@@ -2307,6 +2325,7 @@
           </div>
         </div>
       </div>
+>>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
     </body>
     </html>
 {% endautoescape %}

@@ -184,7 +184,9 @@ def test_cached_art_protected_from_cleanup(app_module, tmp_path):
 def test_overview_link_in_nowplaying_templates():
     from pathlib import Path
     root = Path(__file__).resolve().parents[1] / "kodi-np-multi" / "templates"
+    partial = (root / "partials" / "side_panel.html").read_text(encoding="utf-8")
+    assert 'href="/overview"' in partial
+    assert "Multi-server overview" in partial
     for name in ("movie_nowplaying.html", "episode_nowplaying.html", "music_nowplaying.html"):
         text = (root / name).read_text(encoding="utf-8")
-        assert 'href="/overview"' in text
-        assert "Multi-server overview" in text
+        assert "partials/side_panel.html" in text

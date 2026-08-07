@@ -11,30 +11,6 @@ from kodi_np.servers import get_active_server
 
 logger = logging.getLogger("kodi.nowplaying")
 
-_UNREACHABLE_MARKERS = (
-    "No route to host",
-    "Connection refused",
-    "ConnectTimeout",
-    "Connection reset",
-    "Connection aborted",
-    "Failed to establish a new connection",
-    "NewConnectionError",
-    "Name or service not known",
-    "Network is unreachable",
-    "Max retries exceeded",
-)
-
-
-def is_unreachable_rpc_error(error) -> bool:
-    """True when the host did not accept an RPC connection (offline / unroutable)."""
-    err_text = str(error)
-    return any(marker.lower() in err_text.lower() for marker in _UNREACHABLE_MARKERS)
-
-
-def is_auth_rpc_error(error) -> bool:
-    err_text = str(error)
-    return "401" in err_text or "unauthorized" in err_text.lower()
-
 def server_backoff_remaining(server_id):
     """Seconds left in unreachable backoff, or 0 if server may be contacted."""
     with _c.server_backoff_lock:
@@ -67,15 +43,7 @@ def note_server_rpc_failure(server_id, error):
     if server_id is None:
         return False
     err_text = str(error)
-<<<<<<< Updated upstream
     if "401" in err_text or "unauthorized" in err_text.lower():
-=======
-<<<<<<< HEAD
-    if is_auth_rpc_error(error):
-=======
-    if "401" in err_text or "unauthorized" in err_text.lower():
->>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
->>>>>>> Stashed changes
         with _c.server_backoff_lock:
             _c.server_backoff[server_id] = {
                 "fail_count": 1,
@@ -93,15 +61,22 @@ def note_server_rpc_failure(server_id, error):
     if "read timed out" in err_text.lower():
         return False
     # Only back off on hard reachability problems (not JSON/RPC logic errors).
-    if not is_unreachable_rpc_error(error):
+    unreachable_markers = (
+        "No route to host",
+        "Connection refused",
+        "ConnectTimeout",
+        "Connection reset",
+        "Connection aborted",
+        "Failed to establish a new connection",
+        "NewConnectionError",
+        "Name or service not known",
+        "Network is unreachable",
+    )
+    if not any(marker.lower() in err_text.lower() for marker in unreachable_markers):
         return False
 
     with _c.server_backoff_lock:
         entry = _c.server_backoff.get(server_id) or {"fail_count": 0, "backoff_until": 0, "last_error": ""}
-        # Host unreachable — not an auth problem (wrong password requires a reachable HTTP 401).
-        entry["auth_failed"] = False
-        if entry.get("last_error") == "Authentication failed":
-            entry["last_error"] = err_text
         # Already in backoff — keep quiet
         if float(entry.get("backoff_until") or 0) > time.time():
             entry["last_error"] = err_text

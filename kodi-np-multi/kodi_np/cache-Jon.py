@@ -176,9 +176,6 @@ def overview_from_cache(server_id):
     if not entry:
         return None
     remaining = int(server_backoff_remaining(server_id))
-    backoff = server_backoff_status(server_id)
-    error = entry.get("error")
-    auth_failed = bool(backoff["auth_failed"])
     return {
         "id": server_id,
         "host": entry.get("host"),
@@ -190,8 +187,7 @@ def overview_from_cache(server_id):
         "paused": bool(entry.get("paused")),
         "title": entry.get("title"),
         "media_type": entry.get("media_type"),
-        "error": error,
-        "auth_failed": auth_failed,
+        "error": entry.get("error"),
         "thumb": entry.get("thumb"),
         "thumb_is_banner": bool(entry.get("thumb_is_banner")),
         "fanart": entry.get("fanart") if entry.get("thumb_is_banner") else None,
@@ -202,12 +198,7 @@ def overview_from_cache(server_id):
 
 def probe_playback_fingerprint(server_id):
     """Cheap RPC to detect what (if anything) is playing on a server."""
-    players_response = kodi_rpc(
-        "Player.GetActivePlayers",
-        {},
-        server_id=server_id,
-        bypass_backoff=True,
-    )
+    players_response = kodi_rpc("Player.GetActivePlayers", {}, server_id=server_id)
     if players_response is None:
         backoff = server_backoff_status(server_id)
         return {

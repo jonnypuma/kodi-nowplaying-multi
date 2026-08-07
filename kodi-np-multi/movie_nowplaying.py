@@ -2,11 +2,13 @@
 Movie-specific HTML generation for Kodi Now Playing application.
 Handles movie display with discart spinning animation and movie-specific layout.
 """
+import json
 import logging
 from html import escape
 from flask import render_template
 
 from kodi_np.codecs import format_audio_codec, format_hdr_label, format_video_codec
+from kodi_np.util import build_cast_html
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +83,6 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     
     # Initialize defaults
     director_names = "N/A"
-    cast_names = "N/A"
     hdr_type = "SDR"
     audio_languages = "N/A"
     subtitle_languages = "N/A"
@@ -282,10 +283,9 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     
     tagline = details.get("tagline", "")
     
-    # Cast - limit to top 10 actors
+    # Cast strip (names immediate; thumbs lazy-loaded after paint)
     cast_list = details.get("cast", [])
-    if isinstance(cast_list, list) and cast_list:
-        cast_names = ", ".join([c.get("name") for c in cast_list[:10] if isinstance(c, dict) and c.get("name")]) or "N/A"
+    cast_html = build_cast_html(cast_list, limit=8)
     
     # Genre and formatting
     genre_list = details.get("genre", [])
@@ -386,7 +386,6 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     plot = html_escape(plot)
     imdb_url = html_escape(imdb_url)
     director_names = html_escape(director_names)
-    cast_names = html_escape(cast_names)
     studio_names = html_escape(studio_names)
     tagline = html_escape(tagline)
     release_year = html_escape(release_year)
@@ -411,6 +410,12 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         if fanart_variants
         else ""
     )
+    pending_items = []
+    art_session_id = session_id
+    if isinstance(details, dict):
+        pending_items = list(details.get("pending_fanarts") or [])
+        art_session_id = details.get("art_session_id") or session_id
+    fanart_pending_json = json.dumps({"session_id": art_session_id, "items": pending_items})
     discart_html = (
         f"<div class='discart-wrapper'><img class='discart' src='{discart_url}' /></div>"
         if discart_url
@@ -434,13 +439,8 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         if director_names and director_names != "N/A"
         else ""
     )
-    cast_html = (
-        f"<p><strong>Cast:</strong> {cast_names}</p>"
-        if cast_names and cast_names != "N/A"
-        else ""
-    )
     plot_html = (
-        f"<h3 style='margin-top:20px;'>Plot</h3><p style='max-width:600px;'>{plot}</p>"
+        f"<h3 style='margin-top:12px;'>Plot</h3><p>{plot}</p>"
         if plot and plot.strip()
         else ""
     )
@@ -470,6 +470,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         duration=duration,
         paused_js=paused_js,
         fanart_slides_html=fanart_slides_html,
+        fanart_pending_json=fanart_pending_json,
         discart_html=discart_html,
         poster_html=poster_html,
         title_banner_html=title_banner_html,
