@@ -67,15 +67,7 @@ def note_server_rpc_failure(server_id, error):
     if server_id is None:
         return False
     err_text = str(error)
-<<<<<<< Updated upstream
-    if "401" in err_text or "unauthorized" in err_text.lower():
-=======
-<<<<<<< HEAD
     if is_auth_rpc_error(error):
-=======
-    if "401" in err_text or "unauthorized" in err_text.lower():
->>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
->>>>>>> Stashed changes
         with _c.server_backoff_lock:
             _c.server_backoff[server_id] = {
                 "fail_count": 1,

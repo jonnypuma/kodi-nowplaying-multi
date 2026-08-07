@@ -1,19 +1,7 @@
-<<<<<<< Updated upstream
-/* Shared progressive accessibility enhancements. */
-(function () {
-  "use strict";
-=======
-<<<<<<< HEAD
 /* Shared progressive accessibility enhancements + lyrics/cast helpers. */
 (function () {
   "use strict";
 
-=======
-/* Shared progressive accessibility enhancements. */
-(function () {
-  "use strict";
->>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
->>>>>>> Stashed changes
   function applyReducedMotion(enabled) {
     document.documentElement.classList.toggle("manual-reduced-motion", !!enabled);
     var toggle = document.getElementById("reducedMotionToggle");
@@ -44,17 +32,7 @@
     }).catch(function () {});
   }
 
-<<<<<<< Updated upstream
-  function enhance() {
-    initializeReducedMotion();
-=======
-<<<<<<< HEAD
   function enhanceControls() {
-=======
-  function enhance() {
-    initializeReducedMotion();
->>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
->>>>>>> Stashed changes
     document.querySelectorAll(".marquee-toggle").forEach(function (control) {
       control.setAttribute("role", "button");
       control.setAttribute("tabindex", "0");
@@ -119,9 +97,6 @@
       if (!image.hasAttribute("alt")) image.setAttribute("alt", "");
     });
   }
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
 
   function lazyLoadCastThumbs() {
     var avatars = document.querySelectorAll(".cast-avatar[data-thumb]");
@@ -700,9 +675,6 @@
     initializeViewportFit();
   }
 
-=======
->>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
->>>>>>> Stashed changes
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", enhance);
   } else {

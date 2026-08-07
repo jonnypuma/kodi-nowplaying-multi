@@ -13,15 +13,7 @@ from logging_config import configure_logging
 
 configure_logging()
 
-<<<<<<< Updated upstream
-APP_VERSION = "2.0.0"
-=======
-<<<<<<< HEAD
 APP_VERSION = "3.0.3"
-=======
-APP_VERSION = "2.0.0"
->>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
->>>>>>> Stashed changes
 APP_DIR = Path(__file__).resolve().parent.parent
 app = Flask(__name__, template_folder=str(APP_DIR / "templates"))
 app.secret_key = os.getenv("FLASK_SECRET_KEY", uuid.uuid4().hex)
@@ -102,13 +94,7 @@ PREFERENCE_ENUMS = {
     "blurPreference": {"blurred", "non-blurred"},
     "overlayPreference": {"enabled", "disabled"},
     "reducedMotionPreference": {"enabled", "disabled"},
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
     "lyricsPanelPreference": {"lyrics", "album", "artist"},
-=======
->>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
->>>>>>> Stashed changes
 }
 PREFERENCE_RANGES = {
     "blurAmount": (0, 100),

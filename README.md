@@ -352,9 +352,6 @@ FLASK_SECRET_KEY=paste-the-generated-value-here
 
 Optional: `LOG_LEVEL` (`DEBUG`, `INFO`, `WARNING`, `ERROR`; default `INFO`) controls log verbosity. Set `LOG_FORMAT=json` for one-line JSON logs.
 
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
 ### Production runtime (Gunicorn)
 
 The Docker image runs **Gunicorn** with **one worker** and multiple threads:
@@ -374,9 +371,6 @@ serialized per Kodi host. Extra fanart variants load progressively after first
 paint via `/api/fanart` so the loading screen only waits on one primary fanart
 plus posters/logos.
 
-=======
->>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
->>>>>>> Stashed changes
 ### Optional web login
 
 Set `BASIC_AUTH` to `username:password` to enable the sleek sign-in page. Leave it

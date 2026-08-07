@@ -4,14 +4,8 @@
   "blurAmount": "71",
   "marqueeInterval": "14",
   "fanartInterval": "12",
-<<<<<<< HEAD
   "overlayPreference": "disabled",
   "active_server_id": 2,
   "fanartMinSizeKB": "55",
   "lyricsPanelPreference": "artist"
-=======
-  "overlayPreference": "enabled",
-  "active_server_id": 1,
-  "fanartMinSizeKB": "55"
->>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
 }

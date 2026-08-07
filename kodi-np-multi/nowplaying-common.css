@@ -23,9 +23,6 @@ button, a, input, select {
   transition-duration: 0.01ms !important;
   scroll-behavior: auto !important;
 }
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
 
 /* Cast strip — always one row; thumbs shrink to fit width */
 .cast-strip {
@@ -422,6 +419,3 @@ button, a, input, select {
     overflow-y: auto;
   }
 }
-=======
->>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
->>>>>>> Stashed changes

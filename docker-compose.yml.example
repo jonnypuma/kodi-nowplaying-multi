@@ -27,11 +27,6 @@ services:
       - POLL_IDLE_CONFIRMATIONS=2
       # Optional web login: username:password. Leave empty to disable.
       - BASIC_AUTH=${BASIC_AUTH:-}
-<<<<<<< Updated upstream
-      - CACHE_MAX_ART_FILES=${CACHE_MAX_ART_FILES:-500}
-      - CACHE_MAX_ART_MB=${CACHE_MAX_ART_MB:-1024}
-=======
-<<<<<<< HEAD
       # Optional: stable session key (recommended when BASIC_AUTH is set)
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-}
       - CACHE_MAX_ART_FILES=${CACHE_MAX_ART_FILES:-500}
@@ -40,11 +35,6 @@ services:
       - ART_DOWNLOAD_WORKERS=${ART_DOWNLOAD_WORKERS:-2}
       # Optional TheAudioDB key (default free key 123) for album/artist text fallbacks
       - AUDIODB_API_KEY=${AUDIODB_API_KEY:-123}
-=======
-      - CACHE_MAX_ART_FILES=${CACHE_MAX_ART_FILES:-500}
-      - CACHE_MAX_ART_MB=${CACHE_MAX_ART_MB:-1024}
->>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
->>>>>>> Stashed changes
     env_file:
       - ./.env
     ports:

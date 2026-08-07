@@ -5,9 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
 ## [3.0.3] - 2026-08-02
 
 ### Fixed
@@ -86,9 +83,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Coverage for LRC parsing, lyrics preference enum, overview `auth_failed`, and
   cast HTML builder. Full suite passes with 99 tests.
 
-=======
->>>>>>> 827abde8a4ae1cc3ea63ed185bc4ae0a54452049
->>>>>>> Stashed changes
 ## [2.0.0] - 2026-08-01
 
 ### Added
