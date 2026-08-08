@@ -8,7 +8,7 @@ from html import escape
 from flask import render_template
 
 from kodi_np.codecs import format_audio_codec, format_hdr_label, format_video_codec
-from kodi_np.util import build_cast_html
+from kodi_np.util import build_cast_html, build_meta_labeled_line, build_meta_labeled_lines
 
 logger = logging.getLogger(__name__)
 
@@ -385,6 +385,8 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     title = html_escape(title)
     plot = html_escape(plot)
     imdb_url = html_escape(imdb_url)
+    raw_director_names = director_names if director_names and director_names != "N/A" else ""
+    raw_release_year = release_year
     director_names = html_escape(director_names)
     studio_names = html_escape(studio_names)
     tagline = html_escape(tagline)
@@ -429,18 +431,16 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     else:
         title_banner_html = f"<h2 style='margin-bottom: 4px;'>🎬 {title}</h2>"
     tagline_html = (
-        f"<p style='font-style: italic; color: #ccc; margin-top: 8px;'>{tagline}</p>"
+        f'<p class="show-tagline">{tagline}</p>'
         if tagline
         else ""
     )
-    release_year_html = f"<p><strong>Year:</strong> {release_year}</p>" if release_year else ""
-    director_html = (
-        f"<p><strong>Director:</strong> {director_names}</p>"
-        if director_names and director_names != "N/A"
-        else ""
+    year_director_html = build_meta_labeled_lines(
+        build_meta_labeled_line("Year", raw_release_year),
+        build_meta_labeled_line("Director", raw_director_names),
     )
     plot_html = (
-        f"<h3 style='margin-top:12px;'>Plot</h3><p>{plot}</p>"
+        f"<div class='meta-plot-block'><div class='meta-heading'>Plot</div><p>{plot}</p></div>"
         if plot and plot.strip()
         else ""
     )
@@ -475,8 +475,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         poster_html=poster_html,
         title_banner_html=title_banner_html,
         tagline_html=tagline_html,
-        release_year_html=release_year_html,
-        director_html=director_html,
+        year_director_html=year_director_html,
         cast_html=cast_html,
         plot_html=plot_html,
         rating_html=rating_html,

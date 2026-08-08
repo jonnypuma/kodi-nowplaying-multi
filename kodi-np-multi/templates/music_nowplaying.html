@@ -1340,7 +1340,7 @@
               const currentPaused = data.paused;
               const isError = data.error === true;
 
-              if (isError) {
+              if (isError || data.error_idle === true) {
                 console.log('[DEBUG] Poll playback error flagged, skipping state changes');
                 return;
               }

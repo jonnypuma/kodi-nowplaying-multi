@@ -69,6 +69,7 @@
             .tile.offline { border-left-color: var(--red); opacity: 0.85; }
             .tile.auth-failed { border-left-color: #ab47bc; opacity: 0.9; }
             .tile.idle { border-left-color: rgba(255,255,255,0.25); }
+            .tile.checking { border-left-color: rgba(255,255,255,0.35); opacity: 0.92; }
             .tile.playing:hover, .tile.paused:hover {
                 transform: translateY(-2px);
                 background: rgba(0,0,0,0.7);
@@ -124,6 +125,7 @@
             .badge.idle { background: rgba(255,255,255,0.08); color: var(--muted); }
             .badge.offline { background: rgba(229,57,53,0.22); color: #ef9a9a; }
             .badge.auth-failed { background: rgba(171,71,188,0.28); color: #e1bee7; }
+            .badge.checking { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.75); }
             .tile-meta { color: var(--muted); font-size: 0.85rem; text-transform: capitalize; }
             .tile-ready { color: #a5d6a7; font-size: 0.75rem; }
             .tile-status-row {
@@ -172,16 +174,20 @@
             <h1>Kodi Now Playing Overview</h1>
         </header>
         <div id="grid"><div class="empty">Loading servers…</div></div>
-            <footer id="updated">Auto-refreshing every 5 seconds</footer>
+            <footer id="updated">Loading…</footer>
         <script>
             const grid = document.getElementById('grid');
             const updated = document.getElementById('updated');
+            const REFRESH_MS = 12000;
+            let knownServerIds = [];
+            let refreshInFlight = false;
 
             function isAuthFailed(server) {
                 return !!(server.auth_failed || server.error === 'Authentication failed');
             }
 
             function badgeClass(server) {
+                if (server.loading) return 'checking';
                 if (isAuthFailed(server)) return 'auth-failed';
                 if (!server.connected) return 'offline';
                 if (server.playing && server.paused) return 'paused';
@@ -190,6 +196,7 @@
             }
 
             function badgeLabel(server) {
+                if (server.loading) return 'Checking…';
                 if (isAuthFailed(server)) return 'Auth failed';
                 if (!server.connected) return 'Offline';
                 if (server.playing && server.paused) return 'Paused';
@@ -211,6 +218,7 @@
             }
 
             function statusTitle(server) {
+                if (server.loading) return 'Checking connection…';
                 if (server.playing) return server.title || 'Playing';
                 if (server.connected) return 'Nothing playing';
                 const backoff = formatBackoff(server.backoff_remaining);
@@ -239,7 +247,8 @@
                     const res = await fetch('/api/retry-server/' + serverId, { method: 'POST' });
                     const data = await res.json();
                     if (data && data.server) {
-                        await refresh();
+                        updateServerTile(data.server);
+                        updated.textContent = 'Auto-refresh · updated ' + new Date().toLocaleTimeString();
                         return;
                     }
                 } catch (e) {}
@@ -247,7 +256,7 @@
                     button.disabled = false;
                     button.textContent = 'Retry';
                 }
-                await refresh();
+                await refreshTiles();
             }
 
             function serverDisplayName(server) {
@@ -276,6 +285,145 @@
                 return '<div class="tile-art"><img class="tile-art-fill" src="' + server.thumb + '" alt="' + alt + '"></div>';
             }
 
+            function buildTileElement(server) {
+                const tile = document.createElement('div');
+                tile.className = tileClass(server);
+                tile.dataset.serverId = String(server.id);
+                tile.dataset.thumb = server.thumb || '';
+                const name = serverDisplayName(server);
+                const subtitle = server.host || '';
+                const title = statusTitle(server);
+                const needsRetry = !server.loading && (!server.connected || !!server.error || (server.backoff_remaining > 0));
+                const artHtml = tileArtHtml(server);
+                const readyHtml = server.cache_ready
+                    ? '<div class="tile-ready">Ready · instant open</div>'
+                    : '';
+                const retryHtml = needsRetry
+                    ? '<button type="button" class="tile-retry" data-server-id="' + server.id + '">Retry</button>'
+                    : '';
+                const metaHtml = server.media_type && !server.loading
+                    ? '<div class="tile-meta"></div>'
+                    : '';
+                tile.innerHTML =
+                    artHtml +
+                    '<div class="tile-ip"></div>' +
+                    '<div class="tile-host"></div>' +
+                    '<span class="badge ' + badgeClass(server) + '">' + badgeLabel(server) + '</span>' +
+                    '<div class="tile-status-row"><div class="tile-title"></div>' + retryHtml + '</div>' +
+                    metaHtml +
+                    readyHtml;
+                tile.querySelector('.tile-ip').textContent = name;
+                tile.querySelector('.tile-host').textContent = subtitle;
+                tile.querySelector('.tile-title').textContent = title;
+                const meta = tile.querySelector('.tile-meta');
+                if (meta) meta.textContent = server.media_type;
+                const retryBtn = tile.querySelector('.tile-retry');
+                if (retryBtn) {
+                    retryBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        retryServer(server.id, retryBtn);
+                    });
+                }
+                if (server.connected && !server.loading) {
+                    tile.addEventListener('click', () => openServer(server.id, !!server.playing));
+                    tile.title = server.playing
+                        ? (server.cache_ready ? 'Open cached now playing' : 'Open now playing for this server')
+                        : 'Select this server';
+                } else {
+                    tile.title = '';
+                }
+                return tile;
+            }
+
+            function applyServerToTile(tile, server) {
+                tile.className = tileClass(server);
+                tile.dataset.thumb = server.thumb || '';
+
+                const nameEl = tile.querySelector('.tile-ip');
+                const hostEl = tile.querySelector('.tile-host');
+                const badge = tile.querySelector('.badge');
+                const titleEl = tile.querySelector('.tile-title');
+                const meta = tile.querySelector('.tile-meta');
+                let readyEl = tile.querySelector('.tile-ready');
+                const row = tile.querySelector('.tile-status-row');
+
+                if (nameEl) nameEl.textContent = serverDisplayName(server);
+                if (hostEl) hostEl.textContent = server.host || '';
+                if (badge) {
+                    badge.className = 'badge ' + badgeClass(server);
+                    badge.textContent = badgeLabel(server);
+                }
+                if (titleEl) titleEl.textContent = statusTitle(server);
+                if (meta) {
+                    if (server.media_type && !server.loading) {
+                        meta.textContent = server.media_type;
+                        meta.style.display = '';
+                    } else {
+                        meta.style.display = 'none';
+                    }
+                }
+
+                const needsRetry = !server.loading && (!server.connected || !!server.error || (server.backoff_remaining > 0));
+                let retryBtn = tile.querySelector('.tile-retry');
+                if (needsRetry) {
+                    if (!retryBtn && row) {
+                        retryBtn = document.createElement('button');
+                        retryBtn.type = 'button';
+                        retryBtn.className = 'tile-retry';
+                        retryBtn.dataset.serverId = String(server.id);
+                        retryBtn.textContent = 'Retry';
+                        retryBtn.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            retryServer(server.id, retryBtn);
+                        });
+                        row.appendChild(retryBtn);
+                    } else if (retryBtn) {
+                        retryBtn.disabled = false;
+                        retryBtn.textContent = 'Retry';
+                    }
+                } else if (retryBtn) {
+                    retryBtn.remove();
+                }
+
+                if (server.cache_ready) {
+                    if (!readyEl) {
+                        readyEl = document.createElement('div');
+                        readyEl.className = 'tile-ready';
+                        tile.appendChild(readyEl);
+                    }
+                    readyEl.textContent = 'Ready · instant open';
+                } else if (readyEl) {
+                    readyEl.remove();
+                }
+
+                tile.onclick = null;
+                if (server.connected && !server.loading) {
+                    tile.onclick = () => openServer(server.id, !!server.playing);
+                    tile.title = server.playing
+                        ? (server.cache_ready ? 'Open cached now playing' : 'Open now playing for this server')
+                        : 'Select this server';
+                } else {
+                    tile.title = '';
+                }
+            }
+
+            function updateServerTile(server) {
+                const existing = grid.querySelector('[data-server-id="' + server.id + '"]');
+                const prevThumb = existing ? (existing.dataset.thumb || '') : '';
+                const newThumb = server.thumb || '';
+                if (!existing) {
+                    grid.appendChild(buildTileElement(server));
+                    return;
+                }
+                if (prevThumb !== newThumb) {
+                    existing.replaceWith(buildTileElement(server));
+                    return;
+                }
+                applyServerToTile(existing, server);
+            }
+
             function render(servers) {
                 if (!servers.length) {
                     grid.innerHTML = '<div class="empty">No Kodi servers configured. Set KODI_HOST_1…N in .env</div>';
@@ -283,64 +431,53 @@
                 }
                 grid.innerHTML = '';
                 servers.forEach(server => {
-                    const tile = document.createElement('div');
-                    tile.className = tileClass(server);
-                    const name = serverDisplayName(server);
-                    const subtitle = server.host || '';
-                    const title = statusTitle(server);
-                    const needsRetry = !server.connected || !!server.error || (server.backoff_remaining > 0);
-                    const artHtml = tileArtHtml(server);
-                    const readyHtml = server.cache_ready
-                        ? '<div class="tile-ready">Ready · instant open</div>'
-                        : '';
-                    const retryHtml = needsRetry
-                        ? '<button type="button" class="tile-retry" data-server-id="' + server.id + '">Retry</button>'
-                        : '';
-                    tile.innerHTML =
-                        artHtml +
-                        '<div class="tile-ip"></div>' +
-                        '<div class="tile-host"></div>' +
-                        '<span class="badge ' + badgeClass(server) + '">' + badgeLabel(server) + '</span>' +
-                        '<div class="tile-status-row"><div class="tile-title"></div>' + retryHtml + '</div>' +
-                        (server.media_type ? '<div class="tile-meta"></div>' : '') +
-                        readyHtml;
-                    tile.querySelector('.tile-ip').textContent = name;
-                    tile.querySelector('.tile-host').textContent = subtitle;
-                    tile.querySelector('.tile-title').textContent = title;
-                    const meta = tile.querySelector('.tile-meta');
-                    if (meta) meta.textContent = server.media_type;
-                    const retryBtn = tile.querySelector('.tile-retry');
-                    if (retryBtn) {
-                        retryBtn.addEventListener('click', (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            retryServer(server.id, retryBtn);
-                        });
-                    }
-                    if (server.connected) {
-                        tile.addEventListener('click', () => openServer(server.id, !!server.playing));
-                        tile.title = server.playing
-                            ? (server.cache_ready ? 'Open cached now playing' : 'Open now playing for this server')
-                            : 'Select this server';
-                    }
-                    grid.appendChild(tile);
+                    grid.appendChild(buildTileElement(server));
                 });
-                updated.textContent = 'Auto-refresh · updated ' + new Date().toLocaleTimeString();
             }
 
-            async function refresh() {
+            async function probeServer(serverId) {
+                try {
+                    const res = await fetch('/api/overview-server/' + serverId);
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    if (data && data.server) {
+                        updateServerTile(data.server);
+                    }
+                } catch (e) {}
+            }
+
+            async function initialLoad() {
                 try {
                     const res = await fetch('/api/overview');
+                    if (!res.ok) throw new Error('overview failed');
                     const data = await res.json();
-                    render(data.servers || []);
+                    const servers = data.servers || [];
+                    knownServerIds = servers.map(server => server.id);
+                    render(servers);
+                    updated.textContent = 'Checking servers…';
+                    await Promise.all(knownServerIds.map(id => probeServer(id)));
+                    updated.textContent = 'Auto-refresh every ' + Math.round(REFRESH_MS / 1000) + 's · updated ' + new Date().toLocaleTimeString();
                 } catch (e) {
                     grid.innerHTML = '<div class="error-note">Failed to load overview</div>';
-                    updated.textContent = 'Auto-refresh paused · retrying…';
+                    updated.textContent = 'Load failed · retrying…';
                 }
             }
 
-            refresh();
-            setInterval(refresh, 5000);
+            async function refreshTiles() {
+                if (refreshInFlight || !knownServerIds.length) return;
+                refreshInFlight = true;
+                try {
+                    await Promise.all(knownServerIds.map(id => probeServer(id)));
+                    updated.textContent = 'Auto-refresh every ' + Math.round(REFRESH_MS / 1000) + 's · updated ' + new Date().toLocaleTimeString();
+                } catch (e) {
+                    updated.textContent = 'Refresh failed · will retry…';
+                } finally {
+                    refreshInFlight = false;
+                }
+            }
+
+            initialLoad();
+            setInterval(refreshTiles, REFRESH_MS);
         </script>
     </body>
     </html>

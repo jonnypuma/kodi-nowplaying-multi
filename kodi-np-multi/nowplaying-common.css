@@ -93,6 +93,72 @@ button, a, input, select {
   text-overflow: ellipsis;
 }
 
+/* Shared meta section headings (Year, Director, Plot, Season plot) */
+.meta-heading {
+  font-size: clamp(0.75rem, 1.5vh, 0.95rem);
+  font-weight: 700;
+  margin: 10px 0 6px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+}
+.meta-field {
+  margin: 0 0 4px;
+}
+.meta-field p {
+  margin: 0 0 0.5rem;
+  line-height: 1.45;
+  font-size: clamp(0.92rem, 1.6vh, 1.05rem);
+  color: rgba(255, 255, 255, 0.92);
+}
+.meta-labeled-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 8px;
+}
+.meta-labeled-line {
+  font-size: clamp(0.92rem, 1.6vh, 1.05rem);
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.92);
+}
+.meta-labeled-line .meta-label {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+}
+.show-tagline {
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.72);
+  margin: 8px 0 4px;
+  line-height: 1.4;
+  font-size: clamp(0.9rem, 1.5vh, 1.02rem);
+}
+.meta-plot-block p {
+  max-height: clamp(5rem, 20vh, 12rem);
+  overflow-y: auto;
+  margin-bottom: 0.5rem;
+  line-height: 1.45;
+  font-size: clamp(0.92rem, 1.6vh, 1.05rem);
+}
+.episode-prefs-only {
+  display: none;
+}
+body.episode-now-playing .episode-prefs-only {
+  display: block;
+}
+.side-panel-select {
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.9);
+  font: inherit;
+}
+
 /* Meta column fills remaining width; plot/progress use full column */
 .meta-column {
   display: flex;

@@ -68,6 +68,29 @@ def build_cast_html(cast_list, limit=8):
         "</div>"
     )
 
+
+def build_meta_labeled_line(label: str, value: str) -> str:
+    """One labeled metadata row, e.g. YEAR: 2026."""
+    if not value:
+        return ""
+    safe_label = escape(str(label), quote=True)
+    safe_value = escape(str(value), quote=True)
+    return (
+        f'<div class="meta-labeled-line">'
+        f'<span class="meta-label">{safe_label}:</span> '
+        f'<span class="meta-labeled-value">{safe_value}</span>'
+        f"</div>"
+    )
+
+
+def build_meta_labeled_lines(*lines: str) -> str:
+    """Stack labeled metadata rows vertically."""
+    items = [line for line in lines if line]
+    if not items:
+        return ""
+    return f'<div class="meta-labeled-lines">{"".join(items)}</div>'
+
+
 def prune_load_jobs(force_id=None):
     """Remove finished/stale load jobs and optionally drop a specific job id."""
     now = time.time()

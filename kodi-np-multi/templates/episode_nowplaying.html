@@ -977,6 +977,11 @@
         let playbackPollInFlight = false;
         let playbackPollTimer = null;
         window.SOFT_IDENTITY = __np.identity || {};
+        window.EPISODE_META = (function() {
+          const el = document.getElementById('episode-meta');
+          if (!el) return { season: null, named_seasons: {} };
+          try { return JSON.parse(el.textContent); } catch (e) { return { season: null, named_seasons: {} }; }
+        })();
         const PLAYBACK_POLL_MS = 4000;
         (function initProgressBar() {
           function apply() {
@@ -1408,7 +1413,7 @@
               
               console.log(`[DEBUG] Poll result: playing=${currentState}, item_id=${currentItemId}, lastItemId=${lastItemId}, paused=${currentPaused}, audio=${currentAudioLang}, subtitle=${currentSubtitleLang}`);
 
-              if (isError) {
+              if (isError || data.error_idle === true) {
                 console.log('[DEBUG] Poll playback error flagged, skipping state changes');
                 return;
               }
@@ -1522,6 +1527,43 @@
                 plotText.textContent = '';
                 plotWrap.style.display = 'none';
               }
+            }
+
+            const taglineEl = document.getElementById('soft-tagline');
+            if (taglineEl && data.show_tagline !== undefined) {
+              if (data.show_tagline) {
+                taglineEl.textContent = data.show_tagline;
+                taglineEl.hidden = false;
+              } else {
+                taglineEl.textContent = '';
+                taglineEl.hidden = true;
+              }
+            }
+
+            const seasonPlotWrap = document.getElementById('soft-season-plot');
+            const seasonPlotText = document.getElementById('soft-season-plot-text');
+            if (seasonPlotWrap && seasonPlotText && data.season_plot !== undefined) {
+              if (data.season_plot) {
+                seasonPlotText.textContent = data.season_plot;
+                seasonPlotWrap.style.display = '';
+              } else {
+                seasonPlotText.textContent = '';
+                seasonPlotWrap.style.display = 'none';
+              }
+            }
+            if (data.season != null && seasonPlotWrap) {
+              seasonPlotWrap.dataset.season = String(data.season);
+              if (window.EPISODE_META) window.EPISODE_META.season = data.season;
+            }
+            if (data.named_seasons && window.EPISODE_META) {
+              window.EPISODE_META.named_seasons = data.named_seasons;
+              if (seasonPlotWrap && data.season != null) {
+                const named = data.named_seasons[data.season] || data.named_seasons[String(data.season)] || '';
+                seasonPlotWrap.dataset.namedSeason = named;
+              }
+            }
+            if (typeof applyEpisodeMetaPrefs === 'function') {
+              applyEpisodeMetaPrefs(window._episodeMetaPrefs || {});
             }
 
             if (data.season_changed && data.art && data.art.season_poster) {
@@ -1843,6 +1885,9 @@
                 marqueeInterval: pick('marqueeInterval', '10'),
                 fanartInterval: pick('fanartInterval', '20'),
                 fanartMinSizeKB: pick('fanartMinSizeKB', '200'),
+                episodeTaglinePreference: pick('episodeTaglinePreference', 'enabled'),
+                episodeSeasonPlotPreference: pick('episodeSeasonPlotPreference', 'enabled'),
+                episodeSeasonLabelPreference: pick('episodeSeasonLabelPreference', 'number_and_named'),
                 _server: prefs
               };
             }
@@ -1857,8 +1902,90 @@
             overlayOpacity: localStorage.getItem('overlayOpacity') || '85',
             marqueeInterval: localStorage.getItem('marqueeInterval') || '10',
             fanartInterval: localStorage.getItem('fanartInterval') || '20',
-            fanartMinSizeKB: localStorage.getItem('fanartMinSizeKB') || '200'
+            fanartMinSizeKB: localStorage.getItem('fanartMinSizeKB') || '200',
+            episodeTaglinePreference: localStorage.getItem('episodeTaglinePreference') || 'enabled',
+            episodeSeasonPlotPreference: localStorage.getItem('episodeSeasonPlotPreference') || 'enabled',
+            episodeSeasonLabelPreference: localStorage.getItem('episodeSeasonLabelPreference') || 'number_and_named'
           };
+        }
+
+        function formatSeasonPlotHeading(season, namedSeasons, mode) {
+          const sn = parseInt(season, 10);
+          if (!Number.isFinite(sn)) return 'Season Plot';
+          const named = (namedSeasons && (namedSeasons[sn] || namedSeasons[String(sn)])) || '';
+          if (mode === 'named_only' && named) return `Season ${named} Plot`;
+          if (mode === 'named_only') return `Season ${sn} Plot`;
+          if (named) return `Season ${sn} ${named} Plot`;
+          return `Season ${sn} Plot`;
+        }
+
+        function applyEpisodeMetaPrefs(prefs) {
+          window._episodeMetaPrefs = prefs || {};
+          const taglineOn = (prefs.episodeTaglinePreference || 'enabled') === 'enabled';
+          const seasonPlotOn = (prefs.episodeSeasonPlotPreference || 'enabled') === 'enabled';
+          const labelMode = prefs.episodeSeasonLabelPreference || 'number_and_named';
+
+          const taglineEl = document.getElementById('soft-tagline');
+          if (taglineEl) {
+            const hasText = taglineEl.textContent && taglineEl.textContent.trim();
+            taglineEl.style.display = (taglineOn && hasText && !taglineEl.hidden) ? '' : 'none';
+          }
+
+          const seasonBlock = document.getElementById('soft-season-plot');
+          const seasonText = document.getElementById('soft-season-plot-text');
+          const labelContainer = document.getElementById('episodeSeasonLabelContainer');
+          if (seasonBlock && seasonText) {
+            const hasPlot = seasonText.textContent && seasonText.textContent.trim();
+            seasonBlock.style.display = (seasonPlotOn && hasPlot) ? '' : 'none';
+            const heading = document.getElementById('soft-season-plot-heading');
+            if (heading) {
+              const seasonNum = seasonBlock.dataset.season || (window.EPISODE_META && window.EPISODE_META.season);
+              const named = window.EPISODE_META && window.EPISODE_META.named_seasons || {};
+              heading.textContent = formatSeasonPlotHeading(seasonNum, named, labelMode);
+            }
+          }
+          if (labelContainer) {
+            labelContainer.style.display = seasonPlotOn ? '' : 'none';
+          }
+        }
+
+        function toggleEpisodeTagline() {
+          const enabled = document.getElementById('episodeTaglineToggle').checked;
+          savePreference('episodeTaglinePreference', enabled ? 'enabled' : 'disabled');
+          applyEpisodeMetaPrefs(Object.assign({}, window._episodeMetaPrefs || {}, {
+            episodeTaglinePreference: enabled ? 'enabled' : 'disabled'
+          }));
+        }
+
+        function toggleEpisodeSeasonPlot() {
+          const enabled = document.getElementById('episodeSeasonPlotToggle').checked;
+          savePreference('episodeSeasonPlotPreference', enabled ? 'enabled' : 'disabled');
+          applyEpisodeMetaPrefs(Object.assign({}, window._episodeMetaPrefs || {}, {
+            episodeSeasonPlotPreference: enabled ? 'enabled' : 'disabled'
+          }));
+        }
+
+        function updateEpisodeSeasonLabelPreference(value) {
+          savePreference('episodeSeasonLabelPreference', value);
+          applyEpisodeMetaPrefs(Object.assign({}, window._episodeMetaPrefs || {}, {
+            episodeSeasonLabelPreference: value
+          }));
+        }
+
+        async function initializeEpisodeMetaPrefs(prefs) {
+          const taglineToggle = document.getElementById('episodeTaglineToggle');
+          const seasonPlotToggle = document.getElementById('episodeSeasonPlotToggle');
+          const labelSelect = document.getElementById('episodeSeasonLabelSelect');
+          if (!taglineToggle && !seasonPlotToggle) return;
+
+          const taglinePref = prefs.episodeTaglinePreference || 'enabled';
+          const seasonPlotPref = prefs.episodeSeasonPlotPreference || 'enabled';
+          const labelPref = prefs.episodeSeasonLabelPreference || 'number_and_named';
+
+          if (taglineToggle) taglineToggle.checked = taglinePref === 'enabled';
+          if (seasonPlotToggle) seasonPlotToggle.checked = seasonPlotPref === 'enabled';
+          if (labelSelect) labelSelect.value = labelPref;
+          applyEpisodeMetaPrefs(prefs);
         }
         
         async function savePreference(key, value) {
@@ -2091,7 +2218,10 @@
             ['overlayOpacity', savedOpacity],
             ['marqueeInterval', savedMarqueeInterval],
             ['fanartInterval', savedFanartInterval],
-            ['fanartMinSizeKB', savedFanartMinSize]
+            ['fanartMinSizeKB', savedFanartMinSize],
+            ['episodeTaglinePreference', prefs.episodeTaglinePreference || 'enabled'],
+            ['episodeSeasonPlotPreference', prefs.episodeSeasonPlotPreference || 'enabled'],
+            ['episodeSeasonLabelPreference', prefs.episodeSeasonLabelPreference || 'number_and_named']
           ];
           prefKeys.forEach(([key, value]) => {
             if (!Object.prototype.hasOwnProperty.call(serverPrefs, key)) {
@@ -2137,6 +2267,8 @@
             updateFanartMinSize(savedFanartMinSize, false);
             document.getElementById('fanartMinSizeSlider').value = savedFanartMinSize;
           }
+
+          await initializeEpisodeMetaPrefs(prefs);
         }
         
         // Wait for DOM to be ready before initializing
@@ -2324,12 +2456,13 @@
         })();
       </script>
     </head>
-    <body>
+    <body class="episode-now-playing">
       <!-- Fanart Slideshow Container -->
       <div class="fanart-container">
         {{ fanart_slides_html }}
       </div>
       <script type="application/json" id="fanart-pending">{{ fanart_pending_json|safe }}</script>
+      <script type="application/json" id="episode-meta">{{ episode_meta_json|safe }}</script>
       
       <div class="marquee">
         <div class="marquee-text"><span class="letter">N</span><span class="letter">O</span><span class="letter">W</span><span class="letter">&nbsp;</span><span class="letter">P</span><span class="letter">L</span><span class="letter">A</span><span class="letter">Y</span><span class="letter">I</span><span class="letter">N</span><span class="letter">G</span></div>
@@ -2357,9 +2490,9 @@
               </div>
             </div>
             
-            {{ release_year_html }}
-            {{ director_html }}
+            {{ year_director_html }}
             {{ cast_html }}
+            {{ season_plot_html }}
             {{ plot_html }}
             </div>
             <div class="meta-footer">

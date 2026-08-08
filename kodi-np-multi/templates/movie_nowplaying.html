@@ -1355,7 +1355,7 @@
               
               console.log(`[DEBUG] Poll result: playing=${currentState}, item_id=${currentItemId}, lastItemId=${lastItemId}, paused=${currentPaused}, audio=${currentAudioLang}, subtitle=${currentSubtitleLang}`);
 
-              if (isError) {
+              if (isError || data.error_idle === true) {
                 console.log('[DEBUG] Poll playback error flagged, skipping state changes');
                 return;
               }
@@ -2187,8 +2187,7 @@
           <div class="meta-scroll">
           {{ title_banner_html }}
           {{ tagline_html }}
-          {{ release_year_html }}
-          {{ director_html }}
+          {{ year_director_html }}
           {{ cast_html }}
           {{ plot_html }}
           </div>

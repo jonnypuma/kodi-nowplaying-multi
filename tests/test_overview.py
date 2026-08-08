@@ -69,11 +69,79 @@ def test_overview_page_renders(client):
     response = client.get("/overview")
     assert response.status_code == 200
     assert b"Kodi Now Playing Overview" in response.data
+    assert b"Checking servers" in response.data
     assert b"tile-retry" in response.data
     assert b"/api/retry-server/" in response.data
 
 
+def test_api_overview_fast_snapshot(client, app_module, patch_into):
+    """Overview list returns instantly without blocking on live Kodi RPC."""
+    app_module.nowplaying_cache.clear()
+    app_module.server_backoff.clear()
+    app_module.KODI_SERVERS = {
+        1: {"id": 1, "host": "http://10.0.0.1:8080", "ip": "10.0.0.1", "auth": None, "username": "", "password": ""},
+    }
+    live_calls = {"n": 0}
+
+    def fake_live(server_id):
+        live_calls["n"] += 1
+        return {
+            "id": server_id,
+            "host": "http://10.0.0.1:8080",
+            "connected": True,
+            "playing": True,
+            "loading": False,
+            "title": "Demo Movie",
+        }
+
+    patch_into(app_module, "overview_live_status", fake_live)
+    patch_into(app_module, "overview_from_cache", lambda _sid: None)
+
+    response = client.get("/api/overview")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert live_calls["n"] == 0
+    assert data["servers"][0]["loading"] is True
+    assert data["servers"][0]["host"] == "http://10.0.0.1:8080"
+
+
+def test_api_overview_server_live(client, app_module, patch_into):
+    app_module.nowplaying_cache.clear()
+    app_module.server_backoff.clear()
+    app_module.KODI_SERVERS = {
+        1: {"id": 1, "host": "http://10.0.0.1:8080", "ip": "10.0.0.1", "auth": None, "username": "", "password": ""},
+    }
+
+    def fake_live(server_id):
+        return {
+            "id": server_id,
+            "host": "http://10.0.0.1:8080",
+            "ip": "10.0.0.1",
+            "label": "Living Room",
+            "name": "Living Room",
+            "connected": True,
+            "playing": True,
+            "paused": False,
+            "title": "Demo Movie",
+            "media_type": "movie",
+            "error": None,
+            "loading": False,
+            "backoff_remaining": 0,
+        }
+
+    patch_into(app_module, "overview_live_status", fake_live)
+    patch_into(app_module, "overview_from_cache", lambda _sid: None)
+    response = client.get("/api/overview-server/1")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["success"] is True
+    assert data["server"]["title"] == "Demo Movie"
+    assert data["server"]["playing"] is True
+    assert data["server"]["loading"] is False
+
+
 def test_api_overview_with_mocked_status(client, app_module, patch_into):
+    """Legacy /api/overview/all still returns live merged status."""
     app_module.nowplaying_cache.clear()
     app_module.server_backoff.clear()
     app_module.KODI_SERVERS = {
@@ -93,12 +161,13 @@ def test_api_overview_with_mocked_status(client, app_module, patch_into):
             "title": "Demo Movie",
             "media_type": "movie",
             "error": None,
+            "loading": False,
+            "backoff_remaining": 0,
         }
 
-    patch_into(app_module, "get_server_overview_status", fake_status)
-    # Force live probe path (no warm cache)
+    patch_into(app_module, "overview_live_status", fake_status)
     patch_into(app_module, "overview_from_cache", lambda _sid: None)
-    response = client.get("/api/overview")
+    response = client.get("/api/overview/all")
     assert response.status_code == 200
     data = response.get_json()
     assert data["servers"][0]["title"] == "Demo Movie"
@@ -123,6 +192,18 @@ def test_api_retry_server_clears_backoff(client, app_module, patch_into):
         app_module.clear_cache_playback(server_id, {"connected": True, "error": None})
 
     patch_into(app_module, "refresh_server_cache", fake_refresh)
+    patch_into(
+        app_module,
+        "overview_live_status",
+        lambda server_id: {
+            "id": server_id,
+            "connected": True,
+            "playing": False,
+            "loading": False,
+            "error": None,
+            "backoff_remaining": 0,
+        },
+    )
     response = client.post("/api/retry-server/1")
     assert response.status_code == 200
     data = response.get_json()

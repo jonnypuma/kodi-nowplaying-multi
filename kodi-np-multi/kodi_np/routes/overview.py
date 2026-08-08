@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify
 
 from kodi_np import config as _c
 from kodi_np.cache import cache_diagnostics, clear_cache_playback, overview_from_cache, refresh_server_cache
-from kodi_np.overview import get_server_overview_status
+from kodi_np.overview import overview_fast_snapshot, overview_live_status
 from kodi_np.rpc import note_server_rpc_success, server_backoff_remaining
 
 logger = logging.getLogger("kodi.nowplaying")
@@ -63,38 +63,36 @@ def diagnostics():
 
 @bp.route("/api/overview")
 def api_overview():
-    """Status snapshot for every configured Kodi server (prefers warm cache)."""
+    """Fast status snapshot from cache/config only (no blocking Kodi RPC)."""
     servers = []
     if not _c.KODI_SERVERS:
         return jsonify({"servers": servers})
 
     for server_id in sorted(_c.KODI_SERVERS.keys()):
-        live = get_server_overview_status(server_id)
-        live["backoff_remaining"] = int(server_backoff_remaining(server_id))
-        cached = overview_from_cache(server_id)
-        if cached is not None:
-            cached["connected"] = live["connected"]
-            cached["auth_failed"] = live["auth_failed"]
-            cached["error"] = live["error"]
-            cached["backoff_remaining"] = live["backoff_remaining"]
-            if not live["connected"]:
-                cached["playing"] = False
-                cached["paused"] = False
-                if live.get("title"):
-                    cached["title"] = live["title"]
-            elif live.get("playing"):
-                cached["playing"] = live["playing"]
-                cached["paused"] = live.get("paused", False)
-                if live.get("title"):
-                    cached["title"] = live["title"]
-                if live.get("media_type"):
-                    cached["media_type"] = live["media_type"]
-            servers.append(cached)
-            continue
-        live["thumb"] = None
-        live["cache_ready"] = False
-        live.setdefault("auth_failed", live.get("error") == "Authentication failed")
-        servers.append(live)
+        snapshot = overview_fast_snapshot(server_id)
+        if snapshot is not None:
+            servers.append(snapshot)
+
+    return jsonify({"servers": servers})
+
+
+@bp.route("/api/overview-server/<int:server_id>")
+def api_overview_server(server_id):
+    """Live probe for one Kodi server (used for parallel overview tile updates)."""
+    if server_id not in _c.KODI_SERVERS:
+        return jsonify({"success": False, "error": "Server not found"}), 404
+    return jsonify({"success": True, "server": overview_live_status(server_id)})
+
+
+@bp.route("/api/overview/all", methods=["GET"])
+def api_overview_all():
+    """Legacy: sequential live probe for every server (slow; prefer /api/overview + parallel /api/overview-server)."""
+    servers = []
+    if not _c.KODI_SERVERS:
+        return jsonify({"servers": servers})
+
+    for server_id in sorted(_c.KODI_SERVERS.keys()):
+        servers.append(overview_live_status(server_id))
 
     return jsonify({"servers": servers})
 
@@ -111,12 +109,6 @@ def retry_server(server_id):
     except Exception as e:
         logger.warning(f"Retry refresh failed for server {server_id}: {e}")
 
-    status = overview_from_cache(server_id)
-    if status is None:
-        status = get_server_overview_status(server_id)
-        status["thumb"] = None
-        status["cache_ready"] = False
-        status["backoff_remaining"] = int(server_backoff_remaining(server_id))
-        status.setdefault("auth_failed", status.get("error") == "Authentication failed")
+    status = overview_live_status(server_id)
 
     return jsonify({"success": True, "server": status})

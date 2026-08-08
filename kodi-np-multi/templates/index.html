@@ -528,7 +528,7 @@
                     .then(data => {
                         const currentState = data.playing;
                         const isError = data.error === true;
-                        if (isError) {
+                        if (isError || data.error_idle === true) {
                             console.log('[DEBUG] Poll playback error flagged, skipping redirect');
                             return;
                         }

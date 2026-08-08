@@ -53,20 +53,19 @@ def poll_playback():
                 state["error_streak"] = int(state.get("error_streak", 0)) + 1
                 error_streak = state["error_streak"]
                 known_item = state.get("item_id")
-            # Prolonged failure while we thought something was playing → leave the page
             if error_streak >= _c.POLL_ERROR_IDLE_CONFIRMATIONS and known_item:
-                with _c.playback_poll_lock:
-                    state["item_id"] = None
-                    state["last_check"] = 0.0
-                    state["idle_streak"] = 0
-                    state["error_streak"] = 0
                 logger.info(
-                    "Poll playback - treating as idle after %s RPC failures for server %s",
-                    error_streak,
+                    "Poll playback - prolonged RPC failures for server %s; holding page (streak %s)",
                     server_id,
+                    error_streak,
                 )
-                return jsonify({"playing": False, "error_idle": True})
-            # Do not flip to idle on a short blip — frontend treats error as "hold current page"
+                return jsonify({
+                    "playing": True,
+                    "error": True,
+                    "error_idle": True,
+                    "item_id": known_item,
+                    "error_streak": error_streak,
+                })
             return jsonify({
                 "playing": True if known_item else None,
                 "error": True,

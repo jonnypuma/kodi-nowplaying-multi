@@ -19,7 +19,7 @@ def test_poll_playback_rpc_failure_does_not_report_idle(client, app_module, patc
     assert data.get("item_id") == "movie_42"
 
 
-def test_poll_playback_error_streak_eventually_idle(client, app_module, patch_into):
+def test_poll_playback_error_streak_holds_page(client, app_module, patch_into):
     app_module.playback_poll_state.clear()
     app_module.server_backoff.clear()
     app_module.POLL_ERROR_IDLE_CONFIRMATIONS = 3
@@ -36,7 +36,10 @@ def test_poll_playback_error_streak_eventually_idle(client, app_module, patch_in
     assert client.get("/poll_playback").get_json()["playing"] is not False
     assert client.get("/poll_playback").get_json()["playing"] is not False
     data = client.get("/poll_playback").get_json()
-    assert data["playing"] is False
+    assert data["playing"] is True
+    assert data.get("error") is True
+    assert data.get("error_idle") is True
+    assert data.get("item_id") == "movie_99"
 
 
 def test_poll_playback_bypasses_unreachable_backoff(client, app_module, patch_into):

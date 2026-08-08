@@ -8,7 +8,8 @@ from html import escape
 from flask import render_template
 
 from kodi_np.codecs import format_audio_codec, format_hdr_label, format_video_codec
-from kodi_np.util import build_cast_html
+from kodi_np.tv_nfo import format_season_plot_heading
+from kodi_np.util import build_cast_html, build_meta_labeled_line, build_meta_labeled_lines
 
 logger = logging.getLogger(__name__)
 
@@ -294,9 +295,13 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         if isinstance(director_list, list):
             director_names = ", ".join(director_list) or "N/A"
     
-    # Studio and tagline - for episodes, get studio from TV show details
+    # Studio and tagline - for episodes, prefer TV show extras from details
     studio_names = ""
-    tagline = details.get("tagline", "")
+    show_tagline = (details.get("show_tagline") or details.get("tagline") or "").strip()
+    season_plot = (details.get("season_plot") or "").strip()
+    named_seasons = details.get("named_seasons") or {}
+    if not isinstance(named_seasons, dict):
+        named_seasons = {}
     
     # Try to get studio from episode details first
     studio_list = details.get("studio", [])
@@ -423,9 +428,12 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     episode_badge = html_escape(episode_badge)
     plot = html_escape(plot)
     imdb_url = html_escape(imdb_url)
+    raw_director_names = director_names if director_names and director_names != "N/A" else ""
+    raw_release_year = release_year
     director_names = html_escape(director_names)
     studio_names = html_escape(studio_names)
-    tagline = html_escape(tagline)
+    tagline = html_escape(show_tagline)
+    season_plot_escaped = html_escape(season_plot)
     release_year = html_escape(release_year)
     resolution = html_escape(resolution)
     aspect_ratio = html_escape(aspect_ratio)
@@ -468,9 +476,9 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     else:
         title_banner_html = f"<h2 style='margin-bottom: 4px;'>📺 {show}</h2>"
     tagline_html = (
-        f"<p style='font-style: italic; color: #ccc; margin-top: 8px;'>{tagline}</p>"
-        if tagline
-        else ""
+        f'<p id="soft-tagline" class="show-tagline episode-tagline-block">{tagline}</p>'
+        if show_tagline
+        else '<p id="soft-tagline" class="show-tagline episode-tagline-block" hidden></p>'
     )
     show_title_html = (
         f"<div class='show-title'>{show}</div>"
@@ -486,16 +494,52 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     title_badge_html = (
         f"<span class='badge episode-badge' id='soft-badge-title'>{title_badge}</span>" if title_badge else "<span class='badge episode-badge' id='soft-badge-title' style='display:none'></span>"
     )
-    release_year_html = f"<p><strong>Year:</strong> {release_year}</p>" if release_year else ""
-    director_html = (
-        f"<p><strong>Director:</strong> {director_names}</p>"
-        if director_names and director_names != "N/A"
-        else ""
+    year_director_html = build_meta_labeled_lines(
+        build_meta_labeled_line("Year", raw_release_year),
+        build_meta_labeled_line("Director", raw_director_names),
     )
+    season_heading = format_season_plot_heading(season, named_seasons, "number_and_named")
+    named_for_season = ""
+    if season is not None:
+        try:
+            sn = int(season)
+            named_for_season = html_escape(
+                named_seasons.get(sn) or named_seasons.get(str(sn)) or ""
+            )
+        except (TypeError, ValueError):
+            named_for_season = ""
+    if season_plot:
+        season_plot_html = (
+            f'<div id="soft-season-plot" class="meta-plot-block episode-season-plot-block" '
+            f'data-season="{html_escape(season)}" data-named-season="{named_for_season}">'
+            f'<div class="meta-heading" id="soft-season-plot-heading">{html_escape(season_heading)}</div>'
+            f'<p id="soft-season-plot-text">{season_plot_escaped}</p>'
+            f"</div>"
+        )
+    else:
+        season_plot_html = (
+            '<div id="soft-season-plot" class="meta-plot-block episode-season-plot-block" '
+            'style="display:none" data-season="" data-named-season="">'
+            '<div class="meta-heading" id="soft-season-plot-heading">Season Plot</div>'
+            '<p id="soft-season-plot-text"></p>'
+            "</div>"
+        )
     plot_html = (
-        f"<div id='soft-plot'><h3 style='margin-top:12px;'>Plot</h3><p id='soft-plot-text'>{plot}</p></div>"
+        f"<div id='soft-plot' class='meta-plot-block episode-plot-block'>"
+        f"<div class='meta-heading'>Episode Plot</div>"
+        f"<p id='soft-plot-text'>{plot}</p></div>"
         if plot and plot.strip()
-        else "<div id='soft-plot' style='display:none'><h3 style='margin-top:12px;'>Plot</h3><p id='soft-plot-text'></p></div>"
+        else (
+            "<div id='soft-plot' class='meta-plot-block episode-plot-block' style='display:none'>"
+            "<div class='meta-heading'>Episode Plot</div>"
+            "<p id='soft-plot-text'></p></div>"
+        )
+    )
+    episode_meta_json = json.dumps(
+        {
+            "season": season,
+            "named_seasons": {str(k): v for k, v in named_seasons.items()},
+        }
     )
     imdb_badge_html = (
         f'<a href="{imdb_url}" target="_blank" class="badge-imdb"><span>IMDb</span></a>'
@@ -541,10 +585,11 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
         season_badge_html=season_badge_html,
         episode_badge_html=episode_badge_html,
         title_badge_html=title_badge_html,
-        release_year_html=release_year_html,
-        director_html=director_html,
+        year_director_html=year_director_html,
         cast_html=cast_html,
+        season_plot_html=season_plot_html,
         plot_html=plot_html,
+        episode_meta_json=episode_meta_json,
         rating_html=rating_html,
         imdb_badge_html=imdb_badge_html,
         resolution_badge_html=resolution_badge_html,

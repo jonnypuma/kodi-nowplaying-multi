@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Fixed
+- TV show tagline and season plot now read `tvshow.nfo` / `season.nfo` via plain Kodi
+  VFS (`nfs://…`) instead of the image download path, which returned HTTP 500 for NFO
+  files. Kodi's JSON API does not expose `tagline` on `GetTVShowDetails`; season plot
+  now resolves `seasonid` correctly for `GetSeasonDetails`.
+- Overview page no longer wipes and rebuilds all tiles every refresh (fixes flashing
+  “Checking…” on offline servers); tiles update in place every 12s instead.
+- Now-playing no longer redirects to the idle screen after prolonged Kodi connection
+  blips (`error_idle` holds the current page instead of reporting stopped).
+
+## [3.0.5] - 2026-08-02
+
+### Added
+- Episode page shows TV show **tagline** from `tvshow.nfo` / Kodi library (toggle in
+  settings sidebar; default on).
+- **Season plot** from `season.nfo` (season folder first, then show-root
+  `seasonNN.nfo`) or Kodi `GetSeasonDetails`, with optional named-season labels
+  from `<namedseason>` in `tvshow.nfo` (toggle + label style in sidebar).
+- Year, Director, Episode Plot, and Season Plot headings now match Cast styling
+  (uppercase, off-white).
+
+### Changed
+- Episode metadata order: Cast → Season plot → Episode plot.
+- Application version is now `3.0.5`.
+
+## [3.0.4] - 2026-08-02
+
+### Changed
+- Overview page paints server tiles immediately from cache/config, then probes each
+  Kodi box in parallel via `/api/overview-server/<id>` and updates cards as
+  responses arrive (no more multi-minute wait on one slow/offline host).
+- Application version is now `3.0.4`.
+
 ## [3.0.3] - 2026-08-02
 
 ### Fixed

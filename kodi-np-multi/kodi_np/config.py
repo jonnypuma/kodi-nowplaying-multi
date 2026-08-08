@@ -13,7 +13,7 @@ from logging_config import configure_logging
 
 configure_logging()
 
-APP_VERSION = "3.0.3"
+APP_VERSION = "3.0.5"
 APP_DIR = Path(__file__).resolve().parent.parent
 app = Flask(__name__, template_folder=str(APP_DIR / "templates"))
 app.secret_key = os.getenv("FLASK_SECRET_KEY", uuid.uuid4().hex)
@@ -95,6 +95,9 @@ PREFERENCE_ENUMS = {
     "overlayPreference": {"enabled", "disabled"},
     "reducedMotionPreference": {"enabled", "disabled"},
     "lyricsPanelPreference": {"lyrics", "album", "artist"},
+    "episodeTaglinePreference": {"enabled", "disabled"},
+    "episodeSeasonPlotPreference": {"enabled", "disabled"},
+    "episodeSeasonLabelPreference": {"named_only", "number_and_named"},
 }
 PREFERENCE_RANGES = {
     "blurAmount": (0, 100),

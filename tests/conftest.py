@@ -161,6 +161,14 @@ def patch_into(monkeypatch):
             "kodi_np.overview.get_server_overview_status",
             "kodi_np.routes.overview.get_server_overview_status",
         ],
+        "overview_live_status": [
+            "kodi_np.overview.overview_live_status",
+            "kodi_np.routes.overview.overview_live_status",
+        ],
+        "overview_fast_snapshot": [
+            "kodi_np.overview.overview_fast_snapshot",
+            "kodi_np.routes.overview.overview_fast_snapshot",
+        ],
         "overview_from_cache": [
             "kodi_np.cache.overview_from_cache",
             "kodi_np.routes.overview.overview_from_cache",

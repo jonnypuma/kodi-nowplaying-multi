@@ -129,11 +129,11 @@ def build_nowplaying_html(progress_cb=None, session_id=None, as_payload=False):
                 build_share["season"] = item.get("season")
                 if tvshowid:
                     reuse_tvshow = share_scope_matches(prior_share, "tvshow", tvshowid)
-                    if reuse_tvshow and prior_share.get("tvshow_meta"):
-                        meta = prior_share.get("tvshow_meta") or {}
-                        if meta.get("studio") and not details.get("studio"):
-                            details["studio"] = meta.get("studio")
-                        build_share["tvshow_meta"] = meta
+                    prior_meta = (prior_share.get("tvshow_meta") or {}) if reuse_tvshow else {}
+                    if reuse_tvshow and prior_meta:
+                        if prior_meta.get("studio") and not details.get("studio"):
+                            details["studio"] = prior_meta.get("studio")
+                        build_share["tvshow_meta"] = dict(prior_meta)
                         logger.debug("Reusing cached TV show metadata for tvshowid=%s", tvshowid)
                     else:
                         try:
@@ -157,9 +157,35 @@ def build_nowplaying_html(progress_cb=None, session_id=None, as_payload=False):
                                         namespaced_key = f"tvshow.{art_key}"
                                         if namespaced_key not in item["art"]:
                                             item["art"][namespaced_key] = art_value
-                                build_share["tvshow_meta"] = {"studio": details.get("studio") or tvshow_studio}
+                                build_share["tvshow_meta"] = {
+                                    "studio": details.get("studio") or tvshow_studio,
+                                }
                         except Exception as e:
                             logger.warning(f"Failed to get tvshow details for episode: {e}")
+                    try:
+                        from kodi_np.tv_nfo import resolve_tvshow_extras
+
+                        episode_file = item.get("file") or details.get("file") or ""
+                        meta_base = build_share.get("tvshow_meta") or prior_meta or {}
+                        extras = resolve_tvshow_extras(
+                            episode_file,
+                            item.get("showtitle") or "",
+                            item.get("season"),
+                            tvshowid,
+                            server_id=active_server_id,
+                            prior_meta=meta_base,
+                        )
+                        details["show_tagline"] = extras.get("tagline") or ""
+                        details["season_plot"] = extras.get("season_plot") or ""
+                        details["named_seasons"] = extras.get("named_seasons") or {}
+                        build_share["tvshow_meta"] = {
+                            **meta_base,
+                            "tagline": extras.get("tagline") or meta_base.get("tagline") or "",
+                            "named_seasons": extras.get("named_seasons") or meta_base.get("named_seasons") or {},
+                            "season_plots": extras.get("season_plots") or meta_base.get("season_plots") or {},
+                        }
+                    except Exception as e:
+                        logger.warning(f"Failed to resolve TV show NFO extras: {e}")
             except Exception as e:
                 logger.warning(f"Failed to get enhanced episode details: {e}")
                 logger.debug(f"Using basic item data for {playback_type}")
@@ -532,6 +558,48 @@ def _soft_update_episode(item, prev, prev_type, prior_share, active_server_id, e
     show = item.get("showtitle") or ""
     season_changed = prev.get("season") is None or prev.get("season") != season
 
+    show_tagline = ""
+    season_plot = ""
+    named_seasons = {}
+    prior_meta = prior_share.get("tvshow_meta") or {}
+    if prior_meta:
+        show_tagline = (prior_meta.get("tagline") or "").strip()
+        named_seasons = dict(prior_meta.get("named_seasons") or {})
+        season_plots = prior_meta.get("season_plots") or {}
+        if season is not None:
+            season_plot = (season_plots.get(str(season)) or "").strip()
+    if season_changed or not season_plot or not show_tagline or not named_seasons:
+        try:
+            from kodi_np.tv_nfo import resolve_tvshow_extras
+
+            extras = resolve_tvshow_extras(
+                item.get("file") or "",
+                show,
+                season,
+                tvshow_id,
+                server_id=active_server_id,
+                prior_meta=prior_meta,
+            )
+            if extras.get("tagline"):
+                show_tagline = extras.get("tagline") or show_tagline
+            if extras.get("season_plot"):
+                season_plot = extras.get("season_plot") or season_plot
+            if extras.get("named_seasons"):
+                named_seasons = extras.get("named_seasons") or named_seasons
+            merged_meta = {
+                **prior_meta,
+                "tagline": show_tagline,
+                "named_seasons": named_seasons,
+                "season_plots": extras.get("season_plots") or prior_meta.get("season_plots") or {},
+            }
+            if active_server_id is not None:
+                cache_entry = get_cache_entry(active_server_id) or {}
+                share = dict(cache_entry.get("share") or prior_share)
+                share["tvshow_meta"] = merged_meta
+                set_cache_entry(active_server_id, share=share)
+        except Exception as exc:
+            logger.debug("Soft update TV extras failed: %s", exc)
+
     art = {"season_poster": None, "show_poster": None, "clearlogo": None}
     if season_changed and active_server_id is not None:
         fingerprint = make_playback_fingerprint(item)
@@ -574,6 +642,9 @@ def _soft_update_episode(item, prev, prev_type, prior_share, active_server_id, e
         "showtitle": show,
         "title": title,
         "plot": plot,
+        "show_tagline": show_tagline,
+        "season_plot": season_plot,
+        "named_seasons": named_seasons,
         "season_changed": bool(season_changed),
         "art": art,
         "badges": {

@@ -109,3 +109,78 @@ def get_server_overview_status(server_id):
     except Exception as e:
         status["error"] = str(e)
         return status
+
+
+def overview_fast_snapshot(server_id):
+    """Instant tile data from warm cache or static config (no Kodi RPC)."""
+    from kodi_np.cache import overview_from_cache
+    from kodi_np.rpc import server_backoff_remaining
+
+    cached = overview_from_cache(server_id)
+    if cached is not None:
+        out = dict(cached)
+        out["loading"] = True
+        return out
+
+    server = _c.KODI_SERVERS.get(server_id)
+    if not server:
+        return None
+
+    remaining = int(server_backoff_remaining(server_id))
+    backoff = server_backoff_status(server_id)
+    return {
+        "id": server_id,
+        "host": server["host"],
+        "ip": server["ip"],
+        "label": server.get("label") or "",
+        "name": server_display_name(server),
+        "connected": False,
+        "playing": False,
+        "paused": False,
+        "title": None,
+        "media_type": None,
+        "error": None,
+        "auth_failed": bool(backoff["auth_failed"]),
+        "thumb": None,
+        "thumb_is_banner": False,
+        "fanart": None,
+        "cache_ready": False,
+        "backoff_remaining": remaining,
+        "loading": True,
+    }
+
+
+def overview_live_status(server_id):
+    """Live Kodi probe merged with warm cache fields for one overview tile."""
+    from kodi_np.cache import overview_from_cache
+    from kodi_np.rpc import server_backoff_remaining
+
+    live = get_server_overview_status(server_id)
+    live["backoff_remaining"] = int(server_backoff_remaining(server_id))
+    cached = overview_from_cache(server_id)
+    if cached is not None:
+        cached = dict(cached)
+        cached["connected"] = live["connected"]
+        cached["auth_failed"] = live["auth_failed"]
+        cached["error"] = live["error"]
+        cached["backoff_remaining"] = live["backoff_remaining"]
+        if not live["connected"]:
+            cached["playing"] = False
+            cached["paused"] = False
+            if live.get("title"):
+                cached["title"] = live["title"]
+        elif live.get("playing"):
+            cached["playing"] = live["playing"]
+            cached["paused"] = live.get("paused", False)
+            if live.get("title"):
+                cached["title"] = live["title"]
+            if live.get("media_type"):
+                cached["media_type"] = live["media_type"]
+        cached["loading"] = False
+        return cached
+
+    live["thumb"] = None
+    live["cache_ready"] = False
+    live.setdefault("auth_failed", live.get("error") == "Authentication failed")
+    live["loading"] = False
+    return live

@@ -7,5 +7,7 @@
   "overlayPreference": "disabled",
   "active_server_id": 2,
   "fanartMinSizeKB": "55",
-  "lyricsPanelPreference": "artist"
+  "lyricsPanelPreference": "artist",
+  "episodeTaglinePreference": "enabled",
+  "episodeSeasonPlotPreference": "enabled"
 }
