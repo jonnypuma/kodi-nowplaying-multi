@@ -192,18 +192,6 @@ def test_api_retry_server_clears_backoff(client, app_module, patch_into):
         app_module.clear_cache_playback(server_id, {"connected": True, "error": None})
 
     patch_into(app_module, "refresh_server_cache", fake_refresh)
-    patch_into(
-        app_module,
-        "overview_live_status",
-        lambda server_id: {
-            "id": server_id,
-            "connected": True,
-            "playing": False,
-            "loading": False,
-            "error": None,
-            "backoff_remaining": 0,
-        },
-    )
     response = client.post("/api/retry-server/1")
     assert response.status_code == 200
     data = response.get_json()
@@ -211,6 +199,93 @@ def test_api_retry_server_clears_backoff(client, app_module, patch_into):
     assert refreshed["n"] == 1
     assert app_module.server_backoff_remaining(1) == 0
     assert data["server"]["id"] == 1
+    assert data["server"]["loading"] is False
+    assert data["server"]["connected"] is True
+
+
+def test_overview_live_status_clears_stale_playing_cache(app_module, patch_into):
+    """When Kodi is connected but idle, drop cached playing/title/thumb."""
+    app_module.server_backoff.clear()
+    patch_into(
+        app_module,
+        "get_server_overview_status",
+        lambda server_id: {
+            "id": server_id,
+            "connected": True,
+            "playing": False,
+            "paused": False,
+            "title": None,
+            "media_type": None,
+            "error": None,
+            "auth_failed": False,
+        },
+    )
+    patch_into(app_module, "server_backoff_remaining", lambda _sid: 0)
+    patch_into(
+        app_module,
+        "overview_from_cache",
+        lambda _sid: {
+            "id": 1,
+            "connected": True,
+            "playing": True,
+            "paused": False,
+            "title": "Silo · S03E06",
+            "media_type": "episode",
+            "thumb": "/media/foo.jpg",
+            "cache_ready": True,
+        },
+    )
+    out = app_module.overview_live_status(1)
+    assert out["playing"] is False
+    assert out["cache_ready"] is False
+    assert out["thumb"] is None
+    assert "Nothing playing" in (out.get("title") or "")
+
+
+def test_overview_live_status_skips_rpc_during_backoff(app_module, patch_into):
+    app_module.server_backoff.clear()
+    app_module.SERVER_FAIL_BACKOFF_AFTER = 1
+    app_module.note_server_rpc_failure(1, "Connection refused")
+    rpc_calls = {"n": 0}
+
+    def boom(server_id):
+        rpc_calls["n"] += 1
+        raise AssertionError("live overview must not RPC during backoff")
+
+    patch_into(app_module, "get_server_overview_status", boom)
+    patch_into(
+        app_module,
+        "overview_from_cache",
+        lambda _sid: {
+            "id": 1,
+            "connected": True,
+            "playing": True,
+            "paused": False,
+            "title": "Stale",
+            "error": "Connection failed",
+            "backoff_remaining": 300,
+        },
+    )
+    out = app_module.overview_live_status(1)
+    assert rpc_calls["n"] == 0
+    assert out["connected"] is False
+    assert out["playing"] is False
+    assert out["loading"] is False
+    assert out["backoff_remaining"] > 0
+
+
+def test_overview_page_refresh_uses_cache_snapshot():
+    html = (
+        __import__("pathlib").Path(__file__).resolve().parents[1]
+        / "kodi-np-multi"
+        / "templates"
+        / "overview.html"
+    ).read_text(encoding="utf-8")
+    assert "async function refreshTiles()" in html
+    refresh_fn = html.split("async function refreshTiles()", 1)[1].split("async function", 1)[0]
+    assert "/api/overview'" in refresh_fn or '/api/overview"' in refresh_fn
+    assert "/api/overview-server/" not in refresh_fn
+    assert "backoff_remaining" in html
 
 
 def test_api_retry_server_not_found(client, app_module):

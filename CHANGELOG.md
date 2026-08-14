@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.2] - 2026-08-14
+
+### Fixed
+- Cast thumbnails layout horizontally again. A broken CSS block after
+  `.badge.live-badge` was discarded by the parser and took `.cast-row`
+  `{ display: flex }` with it, so cards stacked as a single column.
+
+### Changed
+- Application version is now `3.1.2`.
+
+## [3.1.1] - 2026-08-14
+
+### Fixed
+- Unreachable Kodi hosts (connection refused, no route, connect timeout) enter
+  poll backoff on the first failure instead of being retried every 12s.
+- Overview auto-refresh reads the cache snapshot (`/api/overview`) instead of
+  live-probing every server. Retry still probes that one host.
+- Background cache probes and overview live status honor unreachable backoff
+  (`/poll_playback` on an open now-playing page still bypasses it).
+- Connection attempts use a 2s connect timeout (`KODI_CONNECT_TIMEOUT`) so
+  powered-off boxes fail fast.
+
+### Changed
+- Application version is now `3.1.1`.
+
+## [3.1.0] - 2026-08-14
+
+### Added
+- Overview **Auto-switch to playing** slide toggle (off by default). Idle stays a
+  server picker; enabling the toggle jumps to the first playing Kodi box.
+- Add custom Kodi hosts from the overview page without a container restart
+  (saved in `preferences.json`; env hosts remain read-only).
+- Playlist **Up next** line on movie, episode, and music pages.
+- Live TV / music video / plugin streams use the movie layout with a Live or
+  Video badge instead of a dead-end unknown page.
+- `/api/events` SSE feed for overview and playback (pages still poll as fallback).
+- `TZ` environment variable for container timezone (IANA name; default `UTC`).
+- Login rate limit, HttpOnly/SameSite session cookies, and a persisted Flask
+  secret key in `/app/preferences/flask_secret_key` when `FLASK_SECRET_KEY` is unset.
+
+### Changed
+- Parser, movie/episode/music HTML generators, and shared stream helpers now live
+  in the `kodi_np` package. Mutable cache/backoff state moved to `kodi_np.state`.
+- Shared clock, playback monitor, and marquee shimmer live in `nowplaying-common.js`.
+- Compose defaults `LOG_LEVEL` to `INFO` and no longer hardcodes `BASIC_AUTH`.
+- JSON logs use the process timezone.
+- Application version is now `3.1.0`.
+- GitHub Actions builds the Docker image in addition to pytest.
+
 ### Fixed
 - TV show tagline and season plot now read `tvshow.nfo` / `season.nfo` via plain Kodi
   VFS (`nfs://…`) instead of the image download path, which returned HTTP 500 for NFO
@@ -14,6 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   “Checking…” on offline servers); tiles update in place every 12s instead.
 - Now-playing no longer redirects to the idle screen after prolonged Kodi connection
   blips (`error_idle` holds the current page instead of reporting stopped).
+- Overview tiles and now-playing correctly detect when playback has stopped (stale
+  cached "playing" state no longer persists after Kodi reports idle players).
 
 ## [3.0.5] - 2026-08-02
 

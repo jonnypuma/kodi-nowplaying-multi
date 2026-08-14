@@ -124,5 +124,6 @@ def test_unreachable_clears_auth_failed_backoff(app_module):
 def test_overview_page_mentions_auto_refresh(client):
     response = client.get("/overview")
     assert response.status_code == 200
-    assert b"Auto-refreshing every 5 seconds" in response.data
+    assert b"Auto-refresh every" in response.data
+    assert b"Auto-switch to playing" in response.data
     assert b"auth-failed" in response.data

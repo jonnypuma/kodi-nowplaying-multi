@@ -77,6 +77,22 @@ def cache_session_id_for(server_id, fingerprint):
     return hashlib.md5(f"{server_id}:{fingerprint}".encode("utf-8")).hexdigest()
 
 
+def _cache_item_id(media_type, item):
+    if not isinstance(item, dict):
+        return None
+    raw_id = item.get("id") or item.get("songid") or item.get("movieid") or item.get("episodeid")
+    if media_type == "song" and raw_id:
+        return f"song_{raw_id}"
+    if media_type == "episode" and raw_id:
+        return f"episode_{raw_id}"
+    if media_type == "movie" and raw_id:
+        return f"movie_{raw_id}"
+    if raw_id:
+        return f"{media_type or 'other'}_{raw_id}"
+    title = item.get("title") or item.get("label")
+    return f"other_{title}" if title else None
+
+
 def get_cache_entry(server_id):
     with _c.cache_lock:
         entry = _c.nowplaying_cache.get(server_id)
@@ -158,6 +174,7 @@ def store_playing_cache(server_id, payload, status=None):
         fingerprint=payload.get("fingerprint"),
         html=payload.get("html"),
         session_id=payload.get("session_id"),
+        item_id=_cache_item_id(media_type, (status or {}).get("item") or {}),
         art_files=art_files,
         thumb_file=thumb_file,
         thumb=f"/media/{thumb_file}" if thumb_file else None,
@@ -200,13 +217,13 @@ def overview_from_cache(server_id):
     }
 
 
-def probe_playback_fingerprint(server_id):
+def probe_playback_fingerprint(server_id, bypass_backoff=False):
     """Cheap RPC to detect what (if anything) is playing on a server."""
     players_response = kodi_rpc(
         "Player.GetActivePlayers",
         {},
         server_id=server_id,
-        bypass_backoff=True,
+        bypass_backoff=bypass_backoff,
     )
     if players_response is None:
         backoff = server_backoff_status(server_id)
@@ -228,11 +245,13 @@ def probe_playback_fingerprint(server_id):
             "properties": ["title", "album", "artist", "showtitle", "season", "episode", "file"],
         },
         server_id=server_id,
+        bypass_backoff=bypass_backoff,
     )
     props_response = kodi_rpc(
         "Player.GetProperties",
         {"playerid": player_id, "properties": ["speed"]},
         server_id=server_id,
+        bypass_backoff=bypass_backoff,
     )
     item = {}
     if item_response and item_response.get("result"):
@@ -289,9 +308,15 @@ def refresh_server_cache(server_id):
         return
 
     if not probe.get("connected"):
-        note_server_rpc_failure(server_id, probe.get("error") or "Connection failed")
         fail_count = int((existing or {}).get("probe_fail_streak", 0)) + 1
-        if existing and existing.get("html") and fail_count < _c.CACHE_PROBE_FAIL_CLEAR_AFTER:
+        remaining = server_backoff_remaining(server_id)
+        keep_warm = (
+            remaining <= 0
+            and existing
+            and existing.get("html")
+            and fail_count < _c.CACHE_PROBE_FAIL_CLEAR_AFTER
+        )
+        if keep_warm:
             set_cache_entry(
                 server_id,
                 connected=False,

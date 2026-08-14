@@ -2,12 +2,20 @@
 from __future__ import annotations
 
 import hmac
+import threading
+import time
 
 from flask import Blueprint, redirect, render_template, request, session, url_for
 
 from kodi_np import config as _c
 
 bp = Blueprint("auth", __name__)
+
+_LOGIN_WINDOW_SECONDS = 15 * 60
+_LOGIN_MAX_FAILURES = 5
+_LOGIN_BLOCK_SECONDS = 60
+_login_attempts = {}
+_login_lock = threading.Lock()
 
 
 def auth_enabled() -> bool:
@@ -22,6 +30,54 @@ def _credentials() -> tuple[str, str]:
 
 def is_authenticated() -> bool:
     return not auth_enabled() or bool(session.get("web_authenticated"))
+
+
+def _client_ip() -> str:
+    forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+    return forwarded or (request.remote_addr or "unknown")
+
+
+def _login_allowed(ip: str) -> tuple[bool, int]:
+    now = time.time()
+    with _login_lock:
+        entry = _login_attempts.get(ip)
+        if not entry:
+            return True, 0
+        blocked_until = float(entry.get("blocked_until") or 0)
+        if blocked_until > now:
+            return False, int(blocked_until - now)
+        started = float(entry.get("started") or now)
+        if now - started > _LOGIN_WINDOW_SECONDS:
+            _login_attempts.pop(ip, None)
+        return True, 0
+
+
+def _note_login_failure(ip: str) -> None:
+    now = time.time()
+    with _login_lock:
+        entry = _login_attempts.get(ip) or {"fails": 0, "started": now, "blocked_until": 0}
+        if now - float(entry.get("started") or now) > _LOGIN_WINDOW_SECONDS:
+            entry = {"fails": 0, "started": now, "blocked_until": 0}
+        entry["fails"] = int(entry.get("fails") or 0) + 1
+        if entry["fails"] >= _LOGIN_MAX_FAILURES:
+            entry["blocked_until"] = now + _LOGIN_BLOCK_SECONDS
+            entry["fails"] = 0
+            entry["started"] = now
+        _login_attempts[ip] = entry
+
+
+def _note_login_success(ip: str) -> None:
+    with _login_lock:
+        _login_attempts.pop(ip, None)
+
+
+def _safe_compare(left: str, right: str) -> bool:
+    left_b = (left or "").encode("utf-8")
+    right_b = (right or "").encode("utf-8")
+    if len(left_b) != len(right_b):
+        hmac.compare_digest(left_b, left_b)
+        return False
+    return hmac.compare_digest(left_b, right_b)
 
 
 @bp.before_app_request
@@ -51,16 +107,22 @@ def login():
         return redirect(url_for("pages.index"))
     next_url = request.args.get("next") or request.form.get("next") or "/"
     error = None
+    ip = _client_ip()
     if request.method == "POST":
-        username, password = _credentials()
-        supplied_user = request.form.get("username", "")
-        supplied_password = request.form.get("password", "")
-        if hmac.compare_digest(supplied_user, username) and hmac.compare_digest(
-            supplied_password, password
-        ):
-            session["web_authenticated"] = True
-            return redirect(next_url if next_url.startswith("/") else "/")
-        error = "Those credentials were not accepted."
+        allowed, retry_in = _login_allowed(ip)
+        if not allowed:
+            error = f"Too many sign-in attempts. Try again in {retry_in}s."
+        else:
+            username, password = _credentials()
+            supplied_user = request.form.get("username", "")
+            supplied_password = request.form.get("password", "")
+            if _safe_compare(supplied_user, username) and _safe_compare(supplied_password, password):
+                _note_login_success(ip)
+                session["web_authenticated"] = True
+                session.permanent = True
+                return redirect(next_url if next_url.startswith("/") else "/")
+            _note_login_failure(ip)
+            error = "Those credentials were not accepted."
     return render_template("login.html", error=error, next=next_url)
 
 

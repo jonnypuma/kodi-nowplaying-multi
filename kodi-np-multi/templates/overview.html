@@ -5,7 +5,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Kodi Now Playing Overview</title>
         <link rel="stylesheet" href="/static/nowplaying-common.css">
-        <script src="/static/nowplaying-common.js" defer></script>
+        <script src="/static/nowplaying-common.js"></script>
         <style>
             :root {
                 --bg0: #141414;
@@ -27,8 +27,73 @@
             header {
                 display: flex;
                 align-items: center;
+                justify-content: space-between;
+                gap: 18px;
+                flex-wrap: wrap;
                 padding: 28px 32px 8px;
             }
+            .header-controls {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }
+            .auto-switch {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                color: var(--muted);
+                font-size: 0.9rem;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            }
+            .toggle { position: relative; display: inline-block; }
+            .toggle__input { position: absolute; opacity: 0; width: 0; height: 0; }
+            .toggle-track {
+                display: block; width: 48px; height: 26px; border-radius: 999px;
+                background: rgba(255,255,255,0.18); position: relative; cursor: pointer;
+            }
+            .toggle-indicator {
+                position: absolute; width: 20px; height: 20px; top: 3px; left: 3px;
+                border-radius: 50%; background: #fff; transition: transform 0.18s ease;
+            }
+            .toggle__input:checked + .toggle-track { background: rgba(76,175,80,0.7); }
+            .toggle__input:checked + .toggle-track .toggle-indicator { transform: translateX(22px); }
+            .add-server {
+                margin: 0 32px 28px;
+                padding: 18px;
+                background: var(--card);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 12px;
+                display: grid;
+                gap: 10px;
+                max-width: 720px;
+            }
+            .add-server h2 {
+                margin: 0;
+                font-size: 0.95rem;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                color: var(--muted);
+            }
+            .add-server-row { display: flex; flex-wrap: wrap; gap: 8px; }
+            .add-server input {
+                flex: 1 1 140px;
+                min-width: 0;
+                padding: 8px 10px;
+                border-radius: 8px;
+                border: 1px solid rgba(255,255,255,0.2);
+                background: rgba(255,255,255,0.08);
+                color: #fff;
+            }
+            .add-server button {
+                border: 1px solid rgba(76,175,80,0.55);
+                background: rgba(76,175,80,0.28);
+                color: #fff;
+                border-radius: 8px;
+                padding: 8px 12px;
+                cursor: pointer;
+            }
+            .add-server .note { color: var(--muted); font-size: 0.8rem; }
             h1 {
                 margin: 0;
                 font-family: 'Arial Black', Arial, sans-serif;
@@ -172,15 +237,74 @@
     <body>
         <header>
             <h1>Kodi Now Playing Overview</h1>
+            <div class="header-controls">
+                <label class="auto-switch" for="autoSwitchToggle">Auto-switch to playing</label>
+                <label class="toggle">
+                    <input type="checkbox" class="toggle__input" id="autoSwitchToggle">
+                    <span class="toggle-track"><span class="toggle-indicator"></span></span>
+                </label>
+            </div>
         </header>
         <div id="grid"><div class="empty">Loading servers…</div></div>
+            <form class="add-server" id="addServerForm">
+                <h2>Add a Kodi host</h2>
+                <div class="add-server-row">
+                    <input name="label" placeholder="Label (optional)" autocomplete="off">
+                    <input name="host" placeholder="http://192.168.0.10:8080" required autocomplete="off">
+                    <input name="username" placeholder="Username" autocomplete="off">
+                    <input name="password" type="password" placeholder="Password" autocomplete="off">
+                    <button type="submit">Add server</button>
+                </div>
+                <div class="note">Env-configured hosts stay in .env. Custom hosts are saved in preferences and apply immediately.</div>
+            </form>
             <footer id="updated">Loading…</footer>
         <script>
             const grid = document.getElementById('grid');
             const updated = document.getElementById('updated');
+            const autoSwitchToggle = document.getElementById('autoSwitchToggle');
+            const addServerForm = document.getElementById('addServerForm');
             const REFRESH_MS = 12000;
             let knownServerIds = [];
             let refreshInFlight = false;
+            let autoSwitchEnabled = false;
+            let autoSwitching = false;
+            let latestServers = [];
+            let serverById = {};
+
+            function maybeAutoSwitch(servers) {
+                if (!autoSwitchEnabled || autoSwitching) return;
+                const playing = (servers || []).filter(server => server.playing && server.connected && !server.loading);
+                if (!playing.length) return;
+                autoSwitching = true;
+                openServer(playing[0].id, true);
+            }
+
+            async function persistAutoSwitch(enabled) {
+                autoSwitchEnabled = enabled;
+                localStorage.setItem('autoSwitchPlayingPreference', enabled ? 'enabled' : 'disabled');
+                try {
+                    await fetch('/api/preferences', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({autoSwitchPlayingPreference: enabled ? 'enabled' : 'disabled'})
+                    });
+                } catch (e) {}
+                maybeAutoSwitch(latestServers);
+            }
+
+            async function loadAutoSwitchPref() {
+                const local = localStorage.getItem('autoSwitchPlayingPreference') === 'enabled';
+                autoSwitchToggle.checked = local;
+                autoSwitchEnabled = local;
+                try {
+                    const res = await fetch('/api/preferences');
+                    const prefs = res.ok ? await res.json() : {};
+                    if (prefs.autoSwitchPlayingPreference) {
+                        autoSwitchEnabled = prefs.autoSwitchPlayingPreference === 'enabled';
+                        autoSwitchToggle.checked = autoSwitchEnabled;
+                    }
+                } catch (e) {}
+            }
 
             function isAuthFailed(server) {
                 return !!(server.auth_failed || server.error === 'Authentication failed');
@@ -410,29 +534,36 @@
             }
 
             function updateServerTile(server) {
+                serverById[server.id] = server;
+                latestServers = Object.keys(serverById).map(id => serverById[id]);
                 const existing = grid.querySelector('[data-server-id="' + server.id + '"]');
                 const prevThumb = existing ? (existing.dataset.thumb || '') : '';
                 const newThumb = server.thumb || '';
                 if (!existing) {
                     grid.appendChild(buildTileElement(server));
+                    maybeAutoSwitch(latestServers);
                     return;
                 }
                 if (prevThumb !== newThumb) {
                     existing.replaceWith(buildTileElement(server));
+                    maybeAutoSwitch(latestServers);
                     return;
                 }
                 applyServerToTile(existing, server);
+                maybeAutoSwitch(latestServers);
             }
 
             function render(servers) {
                 if (!servers.length) {
-                    grid.innerHTML = '<div class="empty">No Kodi servers configured. Set KODI_HOST_1…N in .env</div>';
+                    grid.innerHTML = '<div class="empty">No Kodi servers configured. Set KODI_HOST_1…N in .env or add a host below.</div>';
                     return;
                 }
                 grid.innerHTML = '';
                 servers.forEach(server => {
+                    serverById[server.id] = server;
                     grid.appendChild(buildTileElement(server));
                 });
+                latestServers = servers.slice();
             }
 
             async function probeServer(serverId) {
@@ -455,8 +586,13 @@
                     knownServerIds = servers.map(server => server.id);
                     render(servers);
                     updated.textContent = 'Checking servers…';
-                    await Promise.all(knownServerIds.map(id => probeServer(id)));
+                    await Promise.all(
+                        servers
+                            .filter(server => !(Number(server.backoff_remaining) > 0))
+                            .map(server => probeServer(server.id))
+                    );
                     updated.textContent = 'Auto-refresh every ' + Math.round(REFRESH_MS / 1000) + 's · updated ' + new Date().toLocaleTimeString();
+                    maybeAutoSwitch(latestServers);
                 } catch (e) {
                     grid.innerHTML = '<div class="error-note">Failed to load overview</div>';
                     updated.textContent = 'Load failed · retrying…';
@@ -467,8 +603,14 @@
                 if (refreshInFlight || !knownServerIds.length) return;
                 refreshInFlight = true;
                 try {
-                    await Promise.all(knownServerIds.map(id => probeServer(id)));
+                    const res = await fetch('/api/overview');
+                    if (!res.ok) throw new Error('overview failed');
+                    const data = await res.json();
+                    const servers = data.servers || [];
+                    knownServerIds = servers.map(server => server.id);
+                    servers.forEach(updateServerTile);
                     updated.textContent = 'Auto-refresh every ' + Math.round(REFRESH_MS / 1000) + 's · updated ' + new Date().toLocaleTimeString();
+                    maybeAutoSwitch(latestServers);
                 } catch (e) {
                     updated.textContent = 'Refresh failed · will retry…';
                 } finally {
@@ -476,8 +618,51 @@
                 }
             }
 
-            initialLoad();
+            if (addServerForm) {
+                addServerForm.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    const form = new FormData(addServerForm);
+                    const payload = {
+                        label: form.get('label') || '',
+                        host: form.get('host') || '',
+                        username: form.get('username') || '',
+                        password: form.get('password') || '',
+                    };
+                    try {
+                        const res = await fetch('/api/servers', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify(payload)
+                        });
+                        const data = await res.json();
+                        if (!res.ok || !data.success) {
+                            updated.textContent = data.error || 'Could not add server';
+                            return;
+                        }
+                        addServerForm.reset();
+                        knownServerIds.push(data.server.id);
+                        updateServerTile(Object.assign({connected: false, loading: true}, data.server));
+                        await probeServer(data.server.id);
+                    } catch (e) {
+                        updated.textContent = 'Could not add server';
+                    }
+                });
+            }
+
+            autoSwitchToggle.addEventListener('change', () => persistAutoSwitch(autoSwitchToggle.checked));
+            loadAutoSwitchPref().then(() => initialLoad());
             setInterval(refreshTiles, REFRESH_MS);
+            try {
+                if (window.EventSource) {
+                    const source = new EventSource('/api/events?topic=overview');
+                    source.onmessage = function (event) {
+                        try {
+                            const payload = JSON.parse(event.data);
+                            (payload.servers || []).forEach(updateServerTile);
+                        } catch (err) {}
+                    };
+                }
+            } catch (err) {}
         </script>
     </body>
     </html>

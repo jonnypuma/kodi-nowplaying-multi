@@ -8,6 +8,29 @@ from flask import has_request_context, session
 
 from kodi_np import config as _c
 
+CUSTOM_SERVER_ID_START = 100
+_HOST_RE = re.compile(r"^https?://.+$", re.IGNORECASE)
+
+
+def _server_entry(server_id, host, username="", password="", label="", source="env"):
+    host = (host or "").strip().rstrip("/")
+    username = username or ""
+    password = password or ""
+    label = (label or "").strip()
+    ip_match = re.search(r"(\d+\.\d+\.\d+\.\d+)", host)
+    ip = ip_match.group(1) if ip_match else host
+    return {
+        "id": server_id,
+        "host": host,
+        "username": username,
+        "password": password,
+        "auth": (username, password) if username else None,
+        "ip": ip,
+        "label": label,
+        "source": source,
+    }
+
+
 def parse_kodi_servers():
     """Parse Kodi servers from environment variables (KODI_HOST_1, KODI_HOST_2, etc.)"""
     servers = {}
@@ -17,51 +40,153 @@ def parse_kodi_servers():
         user_key = f"KODI_USERNAME_{i}"
         pass_key = f"KODI_PASSWORD_{i}"
         label_key = f"KODI_HOST_LABEL_{i}"
-        
+
         host = os.getenv(host_key)
         if not host:
             break
-        
-        username = os.getenv(user_key, "")
-        password = os.getenv(pass_key, "")
-        label = (os.getenv(label_key) or "").strip()
-        
-        # Extract IP from host for sorting
-        ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', host)
-        ip = ip_match.group(1) if ip_match else host
-        
-        servers[i] = {
-            "id": i,
-            "host": host,
-            "username": username,
-            "password": password,
-            "auth": (username, password) if username else None,
-            "ip": ip,
-            "label": label,
-        }
+
+        servers[i] = _server_entry(
+            i,
+            host,
+            os.getenv(user_key, ""),
+            os.getenv(pass_key, ""),
+            os.getenv(label_key) or "",
+            source="env",
+        )
         i += 1
-    
-    # If no numbered servers found, try legacy single server format
+
     if not servers:
         legacy_host = os.getenv("KODI_HOST")
         if legacy_host:
             legacy_user = os.getenv("KODI_USER", os.getenv("KODI_USERNAME", ""))
             legacy_pass = os.getenv("KODI_PASS", os.getenv("KODI_PASSWORD", ""))
             legacy_label = (os.getenv("KODI_HOST_LABEL") or "").strip()
-            ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', legacy_host)
-            ip = ip_match.group(1) if ip_match else legacy_host
-            
-            servers[1] = {
-                "id": 1,
-                "host": legacy_host,
-                "username": legacy_user,
-                "password": legacy_pass,
-                "auth": (legacy_user, legacy_pass) if legacy_user else None,
-                "ip": ip,
-                "label": legacy_label,
-            }
-    
+            servers[1] = _server_entry(
+                1, legacy_host, legacy_user, legacy_pass, legacy_label, source="env"
+            )
+
     return servers
+
+
+def _custom_servers_from_prefs():
+    from kodi_np.preferences import load_preferences
+
+    prefs = load_preferences()
+    raw = prefs.get("custom_servers") or []
+    servers = {}
+    if not isinstance(raw, list):
+        return servers
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            server_id = int(entry.get("id"))
+        except (TypeError, ValueError):
+            continue
+        host = (entry.get("host") or "").strip()
+        if not host or server_id < CUSTOM_SERVER_ID_START:
+            continue
+        servers[server_id] = _server_entry(
+            server_id,
+            host,
+            entry.get("username") or "",
+            entry.get("password") or "",
+            entry.get("label") or "",
+            source="custom",
+        )
+    return servers
+
+
+def _dump_custom_servers():
+    dumped = []
+    for server_id, server in sorted(_c.KODI_SERVERS.items()):
+        if server.get("source") != "custom":
+            continue
+        dumped.append({
+            "id": server_id,
+            "host": server.get("host") or "",
+            "username": server.get("username") or "",
+            "password": server.get("password") or "",
+            "label": server.get("label") or "",
+        })
+    return dumped
+
+
+def persist_custom_servers():
+    from kodi_np.preferences import update_preferences
+
+    return update_preferences({"custom_servers": _dump_custom_servers()})
+
+
+def validate_server_host(host: str):
+    host = (host or "").strip()
+    if not _HOST_RE.match(host):
+        return None, "Host must start with http:// or https://"
+    return host.rstrip("/"), None
+
+
+def next_custom_server_id():
+    custom_ids = [sid for sid, srv in _c.KODI_SERVERS.items() if srv.get("source") == "custom"]
+    if not custom_ids:
+        return CUSTOM_SERVER_ID_START
+    return max(custom_ids) + 1
+
+
+def add_custom_server(host, username="", password="", label=""):
+    host, error = validate_server_host(host)
+    if error:
+        return None, error
+    server_id = next_custom_server_id()
+    _c.KODI_SERVERS[server_id] = _server_entry(
+        server_id, host, username, password, label, source="custom"
+    )
+    persist_custom_servers()
+    return _c.KODI_SERVERS[server_id], None
+
+
+def update_custom_server(server_id, host=None, username=None, password=None, label=None):
+    server = _c.KODI_SERVERS.get(server_id)
+    if not server or server.get("source") != "custom":
+        return None, "Only custom servers can be edited"
+    if host is not None:
+        host, error = validate_server_host(host)
+        if error:
+            return None, error
+        server["host"] = host
+        ip_match = re.search(r"(\d+\.\d+\.\d+\.\d+)", host)
+        server["ip"] = ip_match.group(1) if ip_match else host
+    if username is not None:
+        server["username"] = username
+    if password is not None:
+        server["password"] = password
+    if label is not None:
+        server["label"] = (label or "").strip()
+    server["auth"] = (server["username"], server["password"]) if server.get("username") else None
+    persist_custom_servers()
+    return server, None
+
+
+def delete_custom_server(server_id):
+    server = _c.KODI_SERVERS.get(server_id)
+    if not server or server.get("source") != "custom":
+        return False, "Only custom servers can be removed"
+    _c.KODI_SERVERS.pop(server_id, None)
+    persist_custom_servers()
+    return True, None
+
+
+def public_server_payload(server):
+    return {
+        "id": server["id"],
+        "host": server["host"],
+        "ip": server.get("ip") or "",
+        "label": server.get("label") or "",
+        "name": server_display_name(server),
+        "source": server.get("source") or "env",
+        "editable": (server.get("source") == "custom"),
+        "has_auth": bool(server.get("username")),
+    }
+
 
 def server_display_name(server):
     """Human-friendly server name: label (ip) if labeled, otherwise IP/host."""
@@ -79,22 +204,25 @@ def server_display_name(server):
 def get_active_server():
     """Get the currently active server from session, or default to first server"""
     if has_request_context():
-        server_id = session.get('active_server_id', 1)
+        server_id = session.get("active_server_id", 1)
         if server_id in _c.KODI_SERVERS:
             return _c.KODI_SERVERS[server_id]
     else:
         server_id = getattr(_c.active_server_override, "server_id", None)
         if server_id in _c.KODI_SERVERS:
             return _c.KODI_SERVERS[server_id]
-    # Fallback to first server
     if _c.KODI_SERVERS:
         return list(_c.KODI_SERVERS.values())[0]
     return None
 
 
 def init_servers():
-    """Populate config.KODI_SERVERS from environment (in-place so aliases stay valid)."""
+    """Populate config.KODI_SERVERS from environment + persisted custom hosts."""
     servers = parse_kodi_servers()
+    try:
+        servers.update(_custom_servers_from_prefs())
+    except Exception:
+        pass
     _c.KODI_SERVERS.clear()
     _c.KODI_SERVERS.update(servers)
     return _c.KODI_SERVERS

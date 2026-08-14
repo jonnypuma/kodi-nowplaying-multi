@@ -82,7 +82,7 @@ The marquee banner includes an elegant text shimmer effect that adds visual inte
 - **Non-Intrusive**: Effect is subtle enough to not distract from content viewing
 
 ## Blur Toggle Control
-A sleek, discreet toggle button that allows you to switch between blurred and non-blurred overlay modes:
+A discreet toggle button that allows you to switch between blurred and non-blurred overlay modes:
 - **Top-Right Placement**: Small circular button positioned in the top-right corner of the content overlay
 - **Custom SVG Icon**: Inline SVG icon representing the blur effect with layered rectangles
 - **Smooth Animations**: Subtle pulsing glow animation and hover effects
@@ -94,11 +94,11 @@ A sleek, discreet toggle button that allows you to switch between blurred and no
 
 ## Enhanced Scrollbar Styling
 Custom scrollbars during music playback for artist and album info sections with improved visual design and cross-browser support:
-- **WebKit Browsers** (Chrome, Safari, Edge, Brave): Full custom styling with sleek appearance
+- **WebKit Browsers** (Chrome, Safari, Edge, Brave): Full custom styling
 - **Firefox**: Thin scrollbars with color changes on hover
 - **Green Hover Effect**: Scrollbars turn the same green color used throughout the UI when hovered
 - **Smooth Transitions**: CSS transitions for polished interactions
-- **Consistent Design**: Maintains sleek appearance across all browsers
+- **Consistent Design**: Maintains appearance across all browsers
 
 ## Smart Episode Title Detection
 Intelligent detection of generic episode titles to prevent visual duplication:
@@ -306,17 +306,17 @@ KODI_PASSWORD_2=secret
 
 Optional `KODI_HOST_LABEL_N` values appear in the server dropdown, idle message, and `/overview` tiles (falls back to IP if unset).
 
+The idle page stays a **server picker**. On `/overview`, the **Auto-switch to playing**
+toggle (off by default) jumps to the first box that is actually playing. You can also
+add extra Kodi hosts from that page without restarting the container; numbered
+`KODI_HOST_N` entries in `.env` stay read-only.
+
 ### Flask secret key (`FLASK_SECRET_KEY`)
 
 Used to sign Flask session cookies (selected server, and web login when
-`BASIC_AUTH` is enabled). **The app works without setting one** — if unset, a
-random key is generated at startup. That is intentional for easy LAN use: you
-do not need a secret to get started.
-
-Trade-off: the random key changes on every container restart, so browser session
-cookies become invalid (you may need to pick the server again, and you will need
-to sign in again if `BASIC_AUTH` is set). The last selected server is still
-restored from `preferences.json` when possible.
+`BASIC_AUTH` is enabled). If unset, the app writes a generated key to
+`/app/preferences/flask_secret_key` so Docker restarts keep sessions. You can
+still set `FLASK_SECRET_KEY` in `.env` to pin it yourself.
 
 For a stable key across restarts (recommended when using `BASIC_AUTH`), generate
 one and put it in `.env`:
@@ -350,6 +350,8 @@ Then add it to `.env`:
 FLASK_SECRET_KEY=paste-the-generated-value-here
 ```
 
+Optional: `TZ` sets the container timezone for log timestamps and local time (IANA name such as `Europe/Amsterdam`; default `UTC`).
+
 Optional: `LOG_LEVEL` (`DEBUG`, `INFO`, `WARNING`, `ERROR`; default `INFO`) controls log verbosity. Set `LOG_FORMAT=json` for one-line JSON logs.
 
 ### Production runtime (Gunicorn)
@@ -373,7 +375,7 @@ plus posters/logos.
 
 ### Optional web login
 
-Set `BASIC_AUTH` to `username:password` to enable the sleek sign-in page. Leave it
+Set `BASIC_AUTH` to `username:password` to enable the sign-in page. Leave it
 empty to keep the dashboard open on a trusted LAN/VPN:
 
 ```env

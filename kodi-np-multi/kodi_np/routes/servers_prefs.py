@@ -17,7 +17,12 @@ from kodi_np.preferences import (
     validate_preferences_update,
 )
 from kodi_np.rpc import kodi_rpc
-from kodi_np.servers import server_display_name
+from kodi_np.servers import (
+    add_custom_server,
+    delete_custom_server,
+    public_server_payload,
+    update_custom_server,
+)
 
 logger = logging.getLogger("kodi.nowplaying")
 
@@ -27,20 +32,53 @@ bp = Blueprint("servers_prefs", __name__)
 @bp.route("/api/servers")
 def get_servers():
     """Get list of available Kodi servers, sorted by IP"""
-    servers_list = []
-    for server_id, server in _c.KODI_SERVERS.items():
-        servers_list.append({
-            "id": server_id,
-            "host": server["host"],
-            "ip": server["ip"],
-            "label": server.get("label") or "",
-            "name": server_display_name(server),
-        })
-    
-    # Sort by IP address
-    servers_list.sort(key=lambda x: [int(part) for part in x["ip"].split(".") if part.isdigit()])
-    
+    servers_list = [public_server_payload(server) for server in _c.KODI_SERVERS.values()]
+
+    def _sort_key(item):
+        parts = [int(part) for part in item["ip"].split(".") if part.isdigit()]
+        return parts or [item["id"]]
+
+    servers_list.sort(key=_sort_key)
     return jsonify({"servers": servers_list})
+
+
+@bp.route("/api/servers", methods=["POST"])
+def create_server():
+    payload = request.get_json(silent=True) or {}
+    server, error = add_custom_server(
+        payload.get("host") or "",
+        payload.get("username") or "",
+        payload.get("password") or "",
+        payload.get("label") or "",
+    )
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+    return jsonify({"success": True, "server": public_server_payload(server)})
+
+
+@bp.route("/api/servers/<int:server_id>", methods=["PUT", "PATCH"])
+def edit_server(server_id):
+    payload = request.get_json(silent=True) or {}
+    server, error = update_custom_server(
+        server_id,
+        host=payload.get("host"),
+        username=payload.get("username"),
+        password=payload.get("password"),
+        label=payload.get("label"),
+    )
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+    return jsonify({"success": True, "server": public_server_payload(server)})
+
+
+@bp.route("/api/servers/<int:server_id>", methods=["DELETE"])
+def remove_server(server_id):
+    ok, error = delete_custom_server(server_id)
+    if not ok:
+        return jsonify({"success": False, "error": error}), 400
+    if session.get("active_server_id") == server_id:
+        session.pop("active_server_id", None)
+    return jsonify({"success": True})
 
 @bp.route("/api/test-connection/<int:server_id>")
 def test_connection(server_id):

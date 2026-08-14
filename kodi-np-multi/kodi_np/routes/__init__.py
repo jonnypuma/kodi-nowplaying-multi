@@ -15,6 +15,8 @@ def register_blueprints(app):
     app.register_blueprint(servers_prefs_bp)
     app.register_blueprint(overview_bp)
     app.register_blueprint(extras_bp)
+    from kodi_np.routes.events import bp as events_bp
+    app.register_blueprint(events_bp)
     app.register_blueprint(pages_bp)
     app.register_blueprint(playback_bp)
     app.register_blueprint(static_media_bp)

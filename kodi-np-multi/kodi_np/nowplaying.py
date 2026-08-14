@@ -25,10 +25,11 @@ from kodi_np.cache import (
     store_playing_cache,
 )
 from kodi_np.overview import _format_overview_title
+from kodi_np.parser import infer_playback_type, route_media_display
+from kodi_np.playlist import get_up_next_label
 from kodi_np.rpc import kodi_rpc
 from kodi_np.servers import get_active_server
 from kodi_np.util import html_escape, prune_load_jobs
-from parser import route_media_display
 
 logger = logging.getLogger("kodi.nowplaying")
 
@@ -374,62 +375,9 @@ def build_nowplaying_html(progress_cb=None, session_id=None, as_payload=False):
             details = dict(details)
         details["pending_fanarts"] = pending_fanarts
         details["art_session_id"] = session_id
+        details["display_kind"] = infer_playback_type(item)
+        details["up_next_label"] = get_up_next_label(player_id, item)
 
-        # Check if media type is unknown - if so, show fallback message
-        from parser import infer_playback_type
-        playback_type_from_parser = infer_playback_type(item)
-        if playback_type_from_parser == "unknown":
-            logger.info(f"Unknown media type detected, showing fallback message")
-            update(100, "Done")
-            unknown_html = render_template_string("""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Unknown Media Type</title>
-                <style>
-                    body {
-                        font-family: Arial, sans-serif;
-                        background: linear-gradient(to bottom right, #222, #444);
-                        color: white;
-                        margin: 0;
-                        padding: 0;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                    }
-                    .message-box {
-                        background: rgba(0,0,0,0.6);
-                        padding: 40px;
-                        border-radius: 12px;
-                        box-shadow: 0 4px 20px rgba(0,0,0,0.8);
-                        font-size: 1.5em;
-                        text-align: center;
-                        max-width: 600px;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="message-box">
-                    Unknown media type/Media not properly scraped to library.<br>
-                    Please scrape and replay media again
-                </div>
-            </body>
-            </html>
-            """)
-            return _payload(
-                unknown_html,
-                idle=False,
-                downloaded_art=downloaded_art,
-                fingerprint=fingerprint,
-                title=display_title,
-                media_type="other",
-                paused=paused,
-                used_session_id=session_id,
-                share=final_share,
-            )
-
-        # Use the modular system to generate HTML
         html = route_media_display(item, session_id, downloaded_art, progress_data, details)
         update(100, "Done")
         return _payload(

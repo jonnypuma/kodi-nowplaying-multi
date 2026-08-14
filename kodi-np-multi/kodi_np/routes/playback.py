@@ -222,7 +222,7 @@ def start_nowplaying_load():
     if cached and cached.get("html") and cached.get("playing") and cached.get("cache_ready"):
         probe = None
         try:
-            probe = probe_playback_fingerprint(server_id)
+            probe = probe_playback_fingerprint(server_id, bypass_backoff=True)
         except Exception as e:
             logger.debug("Cache-hit probe failed for server %s: %s", server_id, e)
         cache_fp = cached.get("fingerprint")

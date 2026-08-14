@@ -60,6 +60,7 @@ from kodi_np.preferences import (
     validate_preferences_update,
 )
 from kodi_np.rpc import (
+    is_hard_down_rpc_error,
     kodi_rpc,
     note_server_rpc_failure,
     note_server_rpc_success,

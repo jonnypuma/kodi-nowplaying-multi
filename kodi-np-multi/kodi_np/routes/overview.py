@@ -6,7 +6,7 @@ import logging
 from flask import Blueprint, jsonify
 
 from kodi_np import config as _c
-from kodi_np.cache import cache_diagnostics, clear_cache_playback, overview_from_cache, refresh_server_cache
+from kodi_np.cache import cache_diagnostics, overview_from_cache, refresh_server_cache
 from kodi_np.overview import overview_fast_snapshot, overview_live_status
 from kodi_np.rpc import note_server_rpc_success, server_backoff_remaining
 
@@ -109,6 +109,14 @@ def retry_server(server_id):
     except Exception as e:
         logger.warning(f"Retry refresh failed for server {server_id}: {e}")
 
-    status = overview_live_status(server_id)
+    status = overview_from_cache(server_id) or overview_fast_snapshot(server_id) or {
+        "id": server_id,
+        "connected": False,
+        "playing": False,
+        "error": "Connection failed",
+    }
+    status = dict(status)
+    status["loading"] = False
+    status["backoff_remaining"] = int(server_backoff_remaining(server_id))
 
     return jsonify({"success": True, "server": status})

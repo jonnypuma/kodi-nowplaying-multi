@@ -24,11 +24,27 @@ _UNREACHABLE_MARKERS = (
     "Max retries exceeded",
 )
 
+# Powered-off / unroutable hosts — pause polls on the first failure.
+_HARD_DOWN_MARKERS = (
+    "No route to host",
+    "Connection refused",
+    "ConnectTimeout",
+    "Failed to establish a new connection",
+    "NewConnectionError",
+    "Name or service not known",
+    "Network is unreachable",
+)
+
 
 def is_unreachable_rpc_error(error) -> bool:
     """True when the host did not accept an RPC connection (offline / unroutable)."""
     err_text = str(error)
     return any(marker.lower() in err_text.lower() for marker in _UNREACHABLE_MARKERS)
+
+
+def is_hard_down_rpc_error(error) -> bool:
+    err_text = str(error)
+    return any(marker.lower() in err_text.lower() for marker in _HARD_DOWN_MARKERS)
 
 
 def is_auth_rpc_error(error) -> bool:
@@ -100,15 +116,15 @@ def note_server_rpc_failure(server_id, error):
             _c.server_backoff[server_id] = entry
             return True
 
-        entry["fail_count"] = int(entry.get("fail_count") or 0) + 1
+        increment = _c.SERVER_FAIL_BACKOFF_AFTER if is_hard_down_rpc_error(error) else 1
+        entry["fail_count"] = int(entry.get("fail_count") or 0) + increment
         entry["last_error"] = err_text
         if entry["fail_count"] >= _c.SERVER_FAIL_BACKOFF_AFTER:
             entry["backoff_until"] = time.time() + _c.SERVER_FAIL_BACKOFF_SECONDS
             _c.server_backoff[server_id] = entry
             logger.warning(
-                "Server %s unreachable %s times — pausing polls for %ss (%s)",
+                "Server %s unreachable — pausing polls for %ss (%s)",
                 server_id,
-                entry["fail_count"],
                 _c.SERVER_FAIL_BACKOFF_SECONDS,
                 err_text.split("(Caused by")[0].strip()[:120],
             )
@@ -156,12 +172,13 @@ def kodi_rpc(method, params=None, server_id=None, bypass_backoff=False):
         "id": 1
     }
     try:
+        connect_timeout = getattr(_c, "KODI_CONNECT_TIMEOUT", 2.0)
         r = requests.post(
             f"{server['host']}/jsonrpc",
             headers=_c.HEADERS,
             json=payload,
             auth=server['auth'],
-            timeout=_c.KODI_RPC_TIMEOUT,
+            timeout=(connect_timeout, _c.KODI_RPC_TIMEOUT),
         )
         r.raise_for_status()
         response_json = r.json()
@@ -170,14 +187,10 @@ def kodi_rpc(method, params=None, server_id=None, bypass_backoff=False):
         return response_json
     except Exception as e:
         entered_backoff = note_server_rpc_failure(sid, e)
-        # Artwork prepare calls are noisy when a device is overloaded; keep other RPC failures loud
         if method == "Files.PrepareDownload":
             if not entered_backoff:
-                logger.warning(f"Kodi RPC failed for method {method} (server {sid}): {e}")
+                logger.debug("Kodi RPC failed for method %s (server %s): %s", method, sid, e)
             time.sleep(0.15)
         elif not entered_backoff:
-            logger.error(f"Kodi RPC failed for method {method} (server {sid}): {e}")
-        elif remaining <= 0:
-            # First entry into backoff already logged a warning in note_server_rpc_failure
-            pass
+            logger.debug("Kodi RPC failed for method %s (server %s): %s", method, sid, e)
         return None

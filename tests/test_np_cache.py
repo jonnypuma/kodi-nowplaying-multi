@@ -17,6 +17,7 @@ def test_make_playback_fingerprint_changes_with_item(app_module):
 
 def test_store_and_serve_cached_nowplaying(client, app_module, patch_into):
     app_module.nowplaying_cache.clear()
+    app_module.server_backoff.clear()
     app_module.KODI_SERVERS = {
         1: {
             "id": 1,
@@ -54,7 +55,7 @@ def test_store_and_serve_cached_nowplaying(client, app_module, patch_into):
         sess["active_server_id"] = 1
 
     # Cache hit only when live fingerprint still matches the stored page.
-    def matching_probe(server_id):
+    def matching_probe(server_id, bypass_backoff=False):
         return {
             "playing": True,
             "fingerprint": payload["fingerprint"],
@@ -77,6 +78,7 @@ def test_start_nowplaying_load_skips_stale_cache(client, app_module, patch_into,
     """Artist/track change must not return the previous now-playing HTML from cache."""
     app_module.nowplaying_cache.clear()
     app_module.load_jobs.clear()
+    app_module.server_backoff.clear()
     app_module.KODI_SERVERS = {
         1: {
             "id": 1,
@@ -99,7 +101,7 @@ def test_start_nowplaying_load_skips_stale_cache(client, app_module, patch_into,
         "session_id": "aurora-session",
     })
 
-    def oasis_probe(server_id):
+    def oasis_probe(server_id, bypass_backoff=False):
         return {
             "playing": True,
             "fingerprint": "song:999:/oasis.flac:Fuckin in the Bushes::None:None",

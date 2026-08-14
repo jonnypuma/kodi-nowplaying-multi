@@ -5,7 +5,7 @@
       <title>Now Playing</title>
       <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
       <link rel="stylesheet" href="/static/nowplaying-common.css">
-      <script src="/static/nowplaying-common.js" defer></script>
+      <script src="/static/nowplaying-common.js"></script>
       <style>
         body {
           font-family: sans-serif;
@@ -1364,19 +1364,20 @@
                 return;
               }
 
+              if (data.transient_idle) {
+                console.log('[DEBUG] Transient idle (server debouncing stop)');
+                return;
+              }
+
               if (isPlaying) {
                 noPlayCount = 0;
                 redirectingToIdle = false;
-              } else {
-                noPlayCount += 1;
-              }
-
-              if (isNotPlaying && noPlayCount >= 2 && !redirectingToIdle) {
+              } else if (isNotPlaying && !redirectingToIdle) {
                 redirectingToIdle = true;
-                console.log('[DEBUG] Redirecting to idle after debounce');
+                console.log('[DEBUG] Redirecting to idle — playback stopped');
                 document.body.classList.add('fade-out');
                 setTimeout(() => {
-                  window.location.href = '/'; // Redirect to root when playback stops
+                  window.location.href = '/';
                 }, 1500);
                 return;
               }
@@ -2009,9 +2010,28 @@
         
         waitForDOM();
         
-        setInterval(updateTime, 1000);
-        setInterval(resyncTime, 5000);
-        startPlaybackPolling();
+        if (window.NowPlayingRuntime) {
+          NowPlayingRuntime.startClock({
+            getElapsed: function() { return elapsed; },
+            setElapsed: function(v) { elapsed = v; },
+            getDuration: function() { return duration; },
+            setDuration: function(v) { duration = v; },
+            isPaused: function() { return paused; },
+            setPaused: function(v) { paused = v; }
+          });
+          NowPlayingRuntime.startPlaybackMonitor({
+            onPaused: function(p) { paused = p; updatePlaybackButton(p); },
+            onLanguage: function(type, lang) { updateLanguageBadge(type, lang); },
+            onItemChange: function() {
+              document.body.classList.add('fade-out');
+              setTimeout(function() { window.location.href = '/loading'; }, 800);
+            }
+          });
+        } else {
+          setInterval(updateTime, 1000);
+          setInterval(resyncTime, 5000);
+          startPlaybackPolling();
+        }
         
         // Poster Zoom Logic
         (function() {
@@ -2210,8 +2230,10 @@
               Subs: <span class="current-lang">{{ current_subtitle }}</span>
               <span class="all-langs" style="display: none;">{{ all_subtitle_languages_str }}</span>
             </span>
+            {{ kind_badge_html }}
             {{ genre_badges_html }}
           </div>
+          {{ up_next_html }}
           <div class="progress-wrapper">
             <span class="badge" id="time-display" style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
               <img id="playback-button" src="/play-button.png" alt="Play" style="width: 20px; height: 20px; opacity: 1; transition: opacity 0.5s ease;">

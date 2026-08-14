@@ -43,6 +43,7 @@ button, a, input, select {
 }
 .cast-row {
   display: flex;
+  flex-direction: row;
   flex-wrap: nowrap;
   justify-content: flex-start;
   align-items: flex-start;
@@ -484,4 +485,21 @@ body.episode-now-playing .episode-prefs-only {
   .side-panel-body {
     overflow-y: auto;
   }
+}
+
+.up-next {
+  margin: 6px 0 2px;
+  font-size: clamp(0.72rem, 1.3vh, 0.88rem);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.68);
+}
+.up-next-title {
+  text-transform: none;
+  letter-spacing: 0;
+  color: rgba(255, 255, 255, 0.92);
+}
+.badge.live-badge {
+  background: rgba(229, 57, 53, 0.32);
+  color: #ffcdd2;
 }

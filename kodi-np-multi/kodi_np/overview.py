@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 
 from kodi_np import config as _c
-from kodi_np.rpc import kodi_rpc, server_backoff_status
+from kodi_np.rpc import kodi_rpc, server_backoff_remaining, server_backoff_status
 from kodi_np.servers import server_display_name
 
 logger = logging.getLogger("kodi.nowplaying")
@@ -64,7 +64,6 @@ def get_server_overview_status(server_id):
             "Player.GetActivePlayers",
             {},
             server_id=server_id,
-            bypass_backoff=True,
         )
         if players_response is None:
             backoff = server_backoff_status(server_id)
@@ -119,7 +118,11 @@ def overview_fast_snapshot(server_id):
     cached = overview_from_cache(server_id)
     if cached is not None:
         out = dict(cached)
-        out["loading"] = True
+        out["loading"] = False
+        if int(out.get("backoff_remaining") or 0) > 0:
+            out["connected"] = False
+            out["playing"] = False
+            out["paused"] = False
         return out
 
     server = _c.KODI_SERVERS.get(server_id)
@@ -146,14 +149,39 @@ def overview_fast_snapshot(server_id):
         "fanart": None,
         "cache_ready": False,
         "backoff_remaining": remaining,
-        "loading": True,
+        "loading": remaining <= 0,
     }
 
 
 def overview_live_status(server_id):
     """Live Kodi probe merged with warm cache fields for one overview tile."""
     from kodi_np.cache import overview_from_cache
-    from kodi_np.rpc import server_backoff_remaining
+
+    remaining = int(server_backoff_remaining(server_id))
+    if remaining > 0:
+        cached = overview_from_cache(server_id)
+        if cached is not None:
+            out = dict(cached)
+        else:
+            out = overview_fast_snapshot(server_id) or {
+                "id": server_id,
+                "connected": False,
+                "playing": False,
+                "error": "Connection failed",
+            }
+            out = dict(out)
+        out["connected"] = False
+        out["playing"] = False
+        out["paused"] = False
+        out["loading"] = False
+        out["backoff_remaining"] = remaining
+        backoff = server_backoff_status(server_id)
+        out["auth_failed"] = bool(backoff["auth_failed"])
+        if backoff["auth_failed"]:
+            out["error"] = "Authentication failed"
+        elif not out.get("error"):
+            out["error"] = "Connection failed"
+        return out
 
     live = get_server_overview_status(server_id)
     live["backoff_remaining"] = int(server_backoff_remaining(server_id))
@@ -167,15 +195,25 @@ def overview_live_status(server_id):
         if not live["connected"]:
             cached["playing"] = False
             cached["paused"] = False
+            cached["cache_ready"] = False
             if live.get("title"):
                 cached["title"] = live["title"]
         elif live.get("playing"):
-            cached["playing"] = live["playing"]
+            cached["playing"] = True
             cached["paused"] = live.get("paused", False)
             if live.get("title"):
                 cached["title"] = live["title"]
             if live.get("media_type"):
                 cached["media_type"] = live["media_type"]
+        else:
+            cached["playing"] = False
+            cached["paused"] = False
+            cached["cache_ready"] = False
+            cached["title"] = live.get("title") or "Nothing playing"
+            cached["media_type"] = live.get("media_type")
+            cached["thumb"] = None
+            cached["fanart"] = None
+            cached["thumb_is_banner"] = False
         cached["loading"] = False
         return cached
 

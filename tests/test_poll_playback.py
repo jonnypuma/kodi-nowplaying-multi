@@ -123,7 +123,7 @@ def test_cache_probe_failure_keeps_warm_html(app_module, patch_into):
         "session_id": "dddddddddddddddddddddddddddddddd",
     })
 
-    def boom(server_id):
+    def boom(server_id, bypass_backoff=False):
         raise RuntimeError("timeout")
 
     patch_into(app_module, "probe_playback_fingerprint", boom)

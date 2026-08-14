@@ -5,9 +5,10 @@
   "marqueeInterval": "14",
   "fanartInterval": "12",
   "overlayPreference": "disabled",
-  "active_server_id": 2,
+  "active_server_id": 3,
   "fanartMinSizeKB": "55",
   "lyricsPanelPreference": "artist",
   "episodeTaglinePreference": "enabled",
-  "episodeSeasonPlotPreference": "enabled"
+  "episodeSeasonPlotPreference": "enabled",
+  "autoSwitchPlayingPreference": "disabled"
 }

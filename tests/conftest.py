@@ -122,6 +122,13 @@ def client(app_module):
         yield test_client
 
 
+@pytest.fixture(autouse=True)
+def _reset_runtime_state(app_module):
+    app_module.server_backoff.clear()
+    yield
+    app_module.server_backoff.clear()
+
+
 @pytest.fixture
 def patch_into(monkeypatch):
     """Patch a name on app_module and on package modules that import it."""
@@ -172,6 +179,12 @@ def patch_into(monkeypatch):
         "overview_from_cache": [
             "kodi_np.cache.overview_from_cache",
             "kodi_np.routes.overview.overview_from_cache",
+        ],
+        "server_backoff_remaining": [
+            "kodi_np.rpc.server_backoff_remaining",
+            "kodi_np.overview.server_backoff_remaining",
+            "kodi_np.cache.server_backoff_remaining",
+            "kodi_np.routes.overview.server_backoff_remaining",
         ],
         "build_nowplaying_soft_update": [
             "kodi_np.nowplaying.build_nowplaying_soft_update",
