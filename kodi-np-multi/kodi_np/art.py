@@ -1,17 +1,15 @@
-"""Artwork download, share-file reuse, and path safety."""
+"""Artwork orchestration.
+
+Path handling, share reuse, selection, music folder probing, and the
+download plumbing live in the ``art_*`` sibling modules; this module wires
+them together and re-exports the whole surface for existing importers.
+"""
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 import re
-import shutil
-import threading
-import time
 import urllib.parse
-import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 
 import requests
 
@@ -19,521 +17,86 @@ from kodi_np import config as _c
 from kodi_np.preferences import load_preferences
 from kodi_np.rpc import kodi_rpc
 from kodi_np.servers import get_active_server
+from kodi_np.art_paths import (
+    _art_path_basename,
+    _kodi_image_download_url,
+    is_artwork_filename,
+    is_kodi_host_url,
+    normalize_art_source,
+    resolve_safe_child,
+)
+from kodi_np.art_share import (
+    apply_share_reuse,
+    build_key_scope_map,
+    classify_art_buckets,
+    empty_share,
+    ensure_share_file,
+    primary_artist_id,
+    scope_identity,
+    season_share_identity,
+    share_art_filename,
+    share_identity_hash,
+    share_scope_matches,
+)
+from kodi_np.art_select import (
+    cached_art_filenames,
+    collect_extrafanart_variants,
+    pick_fanart_filename,
+    pick_thumb_art,
+    pick_thumb_filename,
+    select_primary_fanart_key,
+)
+from kodi_np.art_music import (
+    _ARTIST_FOLDER_ART_STEMS,
+    _is_remote_song_path,
+    _music_artist_directory,
+    _needs_artist_media_remap,
+    _probe_artist_folder_art,
+    _remap_artist_art_to_song_tree,
+    _scan_directory_for_art_stems,
+    prefer_music_artist_folder_art,
+)
+from kodi_np.art_download import (
+    _art_download_workers,
+    _art_lock_for,
+    _download_urls_parallel,
+    _http_get_to_file,
+    cleanup_old_artwork_files,
+    download_cast_thumbnail,
+    download_fanart_variant,
+)
 
 logger = logging.getLogger("kodi.nowplaying")
 
+__all__ = [
+    "apply_share_reuse",
+    "build_key_scope_map",
+    "cached_art_filenames",
+    "classify_art_buckets",
+    "cleanup_old_artwork_files",
+    "collect_extrafanart_variants",
+    "download_cast_thumbnail",
+    "download_fanart_variant",
+    "empty_share",
+    "ensure_share_file",
+    "is_artwork_filename",
+    "is_kodi_host_url",
+    "normalize_art_source",
+    "pick_fanart_filename",
+    "pick_thumb_art",
+    "pick_thumb_filename",
+    "prefer_music_artist_folder_art",
+    "prepare_and_download_art",
+    "primary_artist_id",
+    "resolve_safe_child",
+    "scope_identity",
+    "season_share_identity",
+    "select_primary_fanart_key",
+    "share_art_filename",
+    "share_identity_hash",
+    "share_scope_matches",
+]
 
-def _art_download_workers() -> int:
-    try:
-        n = int(getattr(_c, "ART_DOWNLOAD_WORKERS", 2))
-    except (TypeError, ValueError):
-        n = 2
-    return max(1, min(4, n))
-
-
-def _http_get_to_file(image_url: str, local_path: str, server: dict, timeout: int = 5) -> None:
-    """Download one URL to a local path (raises on failure)."""
-    if image_url.startswith(server.get("host") or ""):
-        response = requests.get(image_url, auth=server.get("auth"), timeout=timeout)
-    else:
-        response = requests.get(image_url, timeout=timeout)
-    response.raise_for_status()
-    with open(local_path, "wb") as handle:
-        handle.write(response.content)
-
-
-def _download_urls_parallel(jobs, server, size_ok_fn=None):
-    """Download prepared HTTP jobs in a small pool.
-
-    Each job: {art_key, image_url, local_path, filename, raw_path}
-    Returns list of (job, success: bool).
-    PrepareDownload must already have been done; this only parallelizes GETs.
-    """
-    if not jobs:
-        return []
-    workers = min(_art_download_workers(), len(jobs))
-
-    def _one(job):
-        key = job.get("art_key") or "?"
-        try:
-            _http_get_to_file(job["image_url"], job["local_path"], server)
-            if size_ok_fn and not size_ok_fn(job["local_path"], key):
-                return job, False
-            return job, True
-        except Exception as exc:
-            logger.error("Failed to download %s: %s", key, exc)
-            return job, False
-
-    if workers <= 1:
-        return [_one(job) for job in jobs]
-
-    results = []
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(_one, job) for job in jobs]
-        for fut in as_completed(futures):
-            results.append(fut.result())
-    return results
-
-
-def select_primary_fanart_key(media_type, fanart_variants: dict, downloaded: dict) -> str | None:
-    """Pick which fanart key should be on the critical path for first paint."""
-    if not fanart_variants and not any(
-        k.startswith(("fanart", "extrafanart")) for k in downloaded
-    ):
-        return None
-    if media_type == "song":
-        for key in fanart_variants:
-            if key.startswith("extrafanart"):
-                return key
-        for key in ("fanart", "fanart1", "fanart2", "fanart3", "fanart4",
-                    "fanart5", "fanart6", "fanart7", "fanart8", "fanart9"):
-            if key in fanart_variants or key in downloaded:
-                return key
-        for key in fanart_variants:
-            return key
-        return None
-    # movie / episode / other: prefer main fanart
-    if "fanart" in fanart_variants or "fanart" in downloaded:
-        return "fanart"
-    for key in ("fanart1", "fanart2", "fanart3", "fanart4", "fanart5",
-                "fanart6", "fanart7", "fanart8", "fanart9"):
-        if key in fanart_variants or key in downloaded:
-            return key
-    for key in fanart_variants:
-        if key.startswith("extrafanart"):
-            return key
-    for key in fanart_variants:
-        return key
-    return None
-
-def empty_share():
-    return {
-        "tvshow_id": None,
-        "season": None,
-        "tvshow_meta": None,
-        "album_id": None,
-        "album_details": None,
-        "artist_id": None,
-        "artist_details": None,
-        "art_sources": {"tvshow": {}, "season": {}, "album": {}, "artist": {}},
-        "art_files": {"tvshow": {}, "season": {}, "album": {}, "artist": {}},
-    }
-
-
-def primary_artist_id(artistid):
-    if artistid is None:
-        return None
-    if isinstance(artistid, list):
-        return artistid[0] if artistid else None
-    return artistid
-
-
-def normalize_art_source(path):
-    if not path:
-        return ""
-    cleaned = str(path)
-    if cleaned.startswith("image://"):
-        cleaned = urllib.parse.unquote(cleaned[len("image://"):])
-    return cleaned.rstrip("/")
-
-
-def _art_path_basename(path: str) -> str:
-    """Filename from image://, nfs://, or plain paths (trailing slash safe)."""
-    cleaned = normalize_art_source(path).replace("\\", "/")
-    return os.path.basename(cleaned) if cleaned else ""
-
-
-def _is_remote_song_path(path: str) -> bool:
-    if not path:
-        return False
-    lowered = path.lower()
-    return (
-        lowered.startswith("nfs://")
-        or lowered.startswith("smb://")
-        or lowered.startswith("ftp://")
-        or lowered.startswith("sftp://")
-    )
-
-
-def _music_artist_directory(song_file: str) -> str:
-    """Best-effort artist folder for Music/<Artist>/<Album>/track layouts."""
-    if not song_file:
-        return ""
-    normalized = song_file.replace("\\", "/").rstrip("/")
-    parts = normalized.split("/")
-    for i, part in enumerate(parts):
-        if part.lower() == "music" and i + 1 < len(parts):
-            # Keep protocol + host segments through Music/<Artist>
-            return "/".join(parts[: i + 2])
-    album_dir = os.path.dirname(normalized)
-    artist_dir = os.path.dirname(album_dir)
-    return artist_dir if artist_dir != album_dir else album_dir
-
-
-def _needs_artist_media_remap(art_path: str) -> bool:
-    """True when Kodi art points at ArtistInformation or a local Windows path."""
-    if not art_path:
-        return False
-    cleaned = normalize_art_source(art_path)
-    if "ArtistInformation" in art_path or "ArtistInformation" in cleaned:
-        return True
-    # e.g. U:\Kodi\ArtistInformation\AURORA\clearlogo.png
-    if re.match(r"^[A-Za-z]:[\\/]", cleaned):
-        return True
-    return False
-
-
-def _remap_artist_art_to_song_tree(art_path: str, song_file: str) -> str:
-    """Map ArtistInformation/Windows art paths onto Music/<Artist>/<filename>."""
-    filename = _art_path_basename(art_path)
-    if not filename or not _is_remote_song_path(song_file):
-        return ""
-    artist_dir = _music_artist_directory(song_file)
-    if not artist_dir:
-        return ""
-    return f"{artist_dir.rstrip('/')}/{filename}"
-
-
-# Stem -> preferred filenames when scanning the artist folder
-# clearlogo also accepts clearart: many libraries only ship clearart.png as the logo
-_ARTIST_FOLDER_ART_STEMS = {
-    "clearlogo": ("clearlogo", "logo", "clearlogo1", "clearart"),
-    "clearart": ("clearart",),
-    "banner": ("banner",),
-}
-
-
-def _scan_directory_for_art_stems(directory: str, stems: tuple) -> str:
-    """Return first matching image path in directory for the given name stems."""
-    if not directory or not stems:
-        return ""
-    try:
-        dir_response = kodi_rpc("Files.GetDirectory", {
-            "directory": directory,
-            "properties": ["file"],
-        })
-    except Exception as scan_err:
-        logger.debug(f"Artist art scan failed for {directory}: {scan_err}")
-        return ""
-    if not dir_response or not dir_response.get("result") or dir_response.get("error"):
-        return ""
-    stem_set = {s.lower() for s in stems}
-    for file_info in dir_response.get("result", {}).get("files", []) or []:
-        if not isinstance(file_info, dict):
-            continue
-        if file_info.get("filetype") != "file":
-            continue
-        file_path = file_info.get("file") or ""
-        lower = file_path.lower()
-        if not lower.endswith((".png", ".jpg", ".jpeg", ".webp")):
-            continue
-        name = os.path.splitext(os.path.basename(lower.replace("\\", "/")))[0]
-        if name in stem_set:
-            return file_path
-    return ""
-
-
-def _probe_artist_folder_art(artist_dir: str, stems: tuple) -> str:
-    """Find art in Music/<Artist>/ via directory listing, then PrepareDownload probes."""
-    if not artist_dir or not stems:
-        return ""
-    found = _scan_directory_for_art_stems(artist_dir, stems)
-    if found:
-        return found
-
-    # GetDirectory can fail on some shares; probe common filenames the way fanart fallback does
-    for stem in stems:
-        for ext in (".png", ".jpg", ".jpeg", ".webp"):
-            bare = f"{artist_dir.rstrip('/')}/{stem}{ext}"
-            image_path = f"image://{urllib.parse.quote(bare, safe='')}/"
-            for path_arg in (image_path, bare):
-                try:
-                    response = kodi_rpc("Files.PrepareDownload", {"path": path_arg})
-                except Exception:
-                    continue
-                if not response or response.get("error") or not response.get("result"):
-                    continue
-                details = response.get("result", {}).get("details") or {}
-                if details.get("token") or details.get("path"):
-                    return bare
-    return ""
-
-
-def prefer_music_artist_folder_art(song_file: str, art_map: dict, buckets: dict | None = None, key_scope: dict | None = None):
-    """
-    Prefer Music/<Artist>/<artfile> (one folder up from the album) for logos/clearart.
-    Runs before share reuse so a local artist-folder path invalidates stale shared art.
-    """
-    if not song_file or not isinstance(art_map, dict):
-        return
-    album_dir = os.path.dirname(song_file.replace("\\", "/").rstrip("/"))
-    artist_dir = _music_artist_directory(song_file) or os.path.dirname(album_dir)
-    if not artist_dir or artist_dir == album_dir:
-        return
-
-    for art_key, stems in _ARTIST_FOLDER_ART_STEMS.items():
-        found = _probe_artist_folder_art(artist_dir, stems)
-        if not found:
-            continue
-        prior = art_map.get(art_key)
-        art_map[art_key] = found
-        if buckets is not None:
-            buckets.setdefault("artist", {})[art_key] = found
-        if key_scope is not None:
-            key_scope[art_key] = "artist"
-        if prior != found:
-            logger.info("Using artist-folder %s: %s", art_key, found)
-
-
-def _kodi_image_download_url(file_path: str, server: dict):
-    """Prepare a downloadable URL; prefer image:// (works for NFS) then bare path."""
-    if not file_path or not server:
-        return None
-    cleaned = normalize_art_source(file_path)
-    if not cleaned:
-        return None
-    if cleaned.startswith("http://") or cleaned.startswith("https://"):
-        return cleaned
-
-    candidates = []
-    if file_path.startswith("image://"):
-        candidates.append(file_path if file_path.endswith("/") else file_path + "/")
-    candidates.append(f"image://{urllib.parse.quote(cleaned, safe='')}/")
-    candidates.append(cleaned)
-
-    seen = set()
-    for path_arg in candidates:
-        if path_arg in seen:
-            continue
-        seen.add(path_arg)
-        try:
-            response = kodi_rpc("Files.PrepareDownload", {"path": path_arg})
-        except Exception as e:
-            logger.debug("PrepareDownload failed for %s: %s", path_arg, e)
-            continue
-        if not response or response.get("error") or not response.get("result"):
-            continue
-        details = response.get("result", {}).get("details") or {}
-        token = details.get("token")
-        path = details.get("path")
-        if token:
-            basename = _art_path_basename(cleaned)
-            return f"{server['host']}/vfs/{token}/{urllib.parse.quote(basename)}"
-        if path:
-            return f"{server['host']}/{path}"
-    return None
-
-
-def share_identity_hash(server_id, scope, identity):
-    return hashlib.md5(f"{server_id}:{scope}:{identity}".encode("utf-8")).hexdigest()
-
-
-def share_art_filename(server_id, scope, identity, art_key):
-    safe_key = re.sub(r"[^A-Za-z0-9_.-]", "_", str(art_key))
-    return f"share_{share_identity_hash(server_id, scope, identity)}_{safe_key}.jpg"
-
-
-def season_share_identity(tvshow_id, season):
-    if tvshow_id is None or season is None:
-        return None
-    return f"{tvshow_id}:{season}"
-
-
-def classify_art_buckets(raw_art):
-    """Split item['art'] into provenance buckets (clean key -> source path)."""
-    buckets = {"tvshow": {}, "season": {}, "album": {}, "artist": {}, "item": {}}
-    if not isinstance(raw_art, dict):
-        return buckets
-    for key, value in raw_art.items():
-        if not value:
-            continue
-        if key.startswith("tvshow."):
-            buckets["tvshow"][key.replace("tvshow.", "", 1)] = value
-        elif key == "season.poster" or key.startswith("season."):
-            buckets["season"][key] = value
-        elif key.startswith("album."):
-            clean = key.replace("album.", "", 1)
-            if clean == "thumb":
-                clean = "thumbnail"
-            buckets["album"][clean] = value
-        elif key.startswith("artist."):
-            buckets["artist"][key.replace("artist.", "", 1)] = value
-        elif key.startswith("albumartist."):
-            buckets["artist"][key.replace("albumartist.", "", 1)] = value
-        else:
-            buckets["item"][key] = value
-    return buckets
-
-
-def build_key_scope_map(buckets, media_type):
-    """Map clean art keys to share scope (or None for session-only)."""
-    key_scope = {}
-    if media_type == "episode":
-        for key in buckets.get("item") or {}:
-            key_scope[key] = None
-        for key in buckets.get("season") or {}:
-            key_scope[key] = "season"
-        for key in buckets.get("tvshow") or {}:
-            key_scope[key] = "tvshow"
-    elif media_type == "song":
-        for key in buckets.get("item") or {}:
-            key_scope[key] = None
-        for key in buckets.get("album") or {}:
-            key_scope[key] = "album"
-        for key in buckets.get("artist") or {}:
-            if key in _c.MUSIC_COVER_KEYS:
-                continue
-            key_scope[key] = "artist"
-    return key_scope
-
-
-def share_scope_matches(prior_share, scope, identity):
-    if not prior_share or identity is None:
-        return False
-    if scope == "tvshow":
-        return prior_share.get("tvshow_id") == identity
-    if scope == "season":
-        return season_share_identity(prior_share.get("tvshow_id"), prior_share.get("season")) == str(identity)
-    if scope == "album":
-        return prior_share.get("album_id") == identity
-    if scope == "artist":
-        return prior_share.get("artist_id") == identity
-    return False
-
-
-def scope_identity(scope, tvshow_id=None, season=None, album_id=None, artist_id=None):
-    if scope == "tvshow":
-        return tvshow_id
-    if scope == "season":
-        return season_share_identity(tvshow_id, season)
-    if scope == "album":
-        return album_id
-    if scope == "artist":
-        return artist_id
-    return None
-
-
-def apply_share_reuse(server_id, scope, identity, new_sources, prior_share, downloaded):
-    """Reuse share files for a bucket when identity matches and sources are unchanged."""
-    if not share_scope_matches(prior_share, scope, identity):
-        return {}
-    prior_files = (prior_share.get("art_files") or {}).get(scope) or {}
-    prior_sources = (prior_share.get("art_sources") or {}).get(scope) or {}
-    reused = {}
-    new_sources = new_sources or {}
-    # Reuse all prior keys that still exist; invalidate when source URL changed
-    keys = set(prior_files) | set(new_sources)
-    for art_key in keys:
-        filename = prior_files.get(art_key)
-        if not filename:
-            continue
-        local_path = os.path.join(_c.ART_TMP_DIR, filename)
-        if not (os.path.exists(local_path) and os.path.getsize(local_path) > 0):
-            continue
-        if art_key in new_sources:
-            new_src = normalize_art_source(new_sources[art_key])
-            old_src = normalize_art_source(prior_sources.get(art_key))
-            if new_src and old_src and new_src != old_src:
-                continue
-        downloaded[art_key] = filename
-        reused[art_key] = filename
-        logger.debug("Reusing shared %s art %s -> %s", scope, art_key, filename)
-    return reused
-
-
-def ensure_share_file(server_id, scope, identity, art_key, source_path, session_filename=None):
-    """Ensure art lives at the share path; copy/link from session file if needed. Returns share filename."""
-    if identity is None:
-        return session_filename
-    share_name = share_art_filename(server_id, scope, identity, art_key)
-    share_path = os.path.join(_c.ART_TMP_DIR, share_name)
-    if os.path.exists(share_path) and os.path.getsize(share_path) > 0:
-        return share_name
-    if session_filename:
-        src_path = os.path.join(_c.ART_TMP_DIR, session_filename)
-        if os.path.exists(src_path) and os.path.getsize(src_path) > 0:
-            try:
-                if os.path.abspath(src_path) != os.path.abspath(share_path):
-                    try:
-                        os.link(src_path, share_path)
-                    except OSError:
-                        shutil.copy2(src_path, share_path)
-                return share_name
-            except Exception as e:
-                logger.debug("Failed to promote %s to share file: %s", art_key, e)
-    return session_filename
-
-
-def pick_thumb_filename(downloaded_art):
-    """Return preferred overview tile image filename, or None."""
-    picked = pick_thumb_art(downloaded_art)
-    return picked[0] if picked else None
-
-
-def pick_thumb_art(downloaded_art):
-    """Return (filename, art_key) for overview tile primary art."""
-    if not isinstance(downloaded_art, dict):
-        return None
-    for key in _c.THUMB_ART_PRIORITY:
-        filename = downloaded_art.get(key)
-        if filename:
-            return filename, key
-    for key, filename in downloaded_art.items():
-        if filename and str(key).startswith("fanart"):
-            return filename, key
-    return None
-
-
-def pick_fanart_filename(downloaded_art):
-    """Primary fanart file for overview banner backgrounds."""
-    if not isinstance(downloaded_art, dict):
-        return None
-    for key in ("fanart", "fanart1", "fanart2", "fanart3", "extrafanart_main"):
-        filename = downloaded_art.get(key)
-        if filename:
-            return filename
-    for key, filename in downloaded_art.items():
-        if filename and str(key).startswith("fanart"):
-            return filename
-    return None
-
-
-def cached_art_filenames():
-    """Filenames currently referenced by the now-playing cache (must not be deleted)."""
-    protected = set()
-    with _c.cache_lock:
-        for entry in _c.nowplaying_cache.values():
-            for name in entry.get("art_files") or []:
-                protected.add(name)
-            thumb = entry.get("thumb_file")
-            if thumb:
-                protected.add(thumb)
-            fanart = entry.get("fanart_file")
-            if fanart:
-                protected.add(fanart)
-            share = entry.get("share") or {}
-            for bucket_files in (share.get("art_files") or {}).values():
-                if isinstance(bucket_files, dict):
-                    for name in bucket_files.values():
-                        if name:
-                            protected.add(name)
-    return protected
-
-
-def is_artwork_filename(filename):
-    """True for session (32hex_*) or share (share_32hex_*) artwork files."""
-    if not filename:
-        return False
-    return bool(_c.ARTWORK_FILENAME_RE.fullmatch(filename))
-
-
-def _art_lock_for(server_id):
-    with _c.art_download_locks_guard:
-        lock = _c.art_download_locks.get(server_id)
-        if lock is None:
-            lock = threading.Lock()
-            _c.art_download_locks[server_id] = lock
-        return lock
 
 
 def prepare_and_download_art(item, session_id, progress_cb=None, share_context=None):
@@ -543,7 +106,7 @@ def prepare_and_download_art(item, session_id, progress_cb=None, share_context=N
     # Get active server for this request
     server = get_active_server()
     if not server:
-        logger.error(f"No active server available for artwork download")
+        logger.error("No active server available for artwork download")
         return downloaded, empty_share()
 
     # Serialize art RPC/download traffic per Kodi — concurrent PrepareDownload floods hang weak devices
@@ -551,6 +114,7 @@ def prepare_and_download_art(item, session_id, progress_cb=None, share_context=N
         return _prepare_and_download_art_locked(
             item, session_id, server, progress_cb=progress_cb, share_context=share_context
         )
+
 
 
 def _prepare_and_download_art_locked(item, session_id, server, progress_cb=None, share_context=None):
@@ -923,28 +487,12 @@ def _prepare_and_download_art_locked(item, session_id, server, progress_cb=None,
                                         if extrafanart_response and extrafanart_response.get("result") and not extrafanart_response.get("error"):
                                             extrafanart_files = extrafanart_response.get("result", {}).get("files", [])
                                             logger.debug(f"Found {len(extrafanart_files)} files in extrafanart directory")
-                                            
-                                            # Process each fanart file in the extrafanart directory
-                                            for extrafanart_file in extrafanart_files:
-                                                if isinstance(extrafanart_file, dict):
-                                                    extrafanart_path = extrafanart_file.get("file", "")
-                                                    if extrafanart_path and extrafanart_path.lower().endswith((".jpg", ".jpeg", ".png")):
-                                                        filename = os.path.basename(extrafanart_path)
-                                                        logger.debug(f"Found extrafanart file: {extrafanart_path}")
-                                                        
-                                                        # Create a unique key for this extrafanart file
-                                                    if filename.lower() == "fanart.jpg":
-                                                        fanart_variants["extrafanart_main"] = extrafanart_path
-                                                        if enable_share and media_type == "episode":
-                                                            key_scope["extrafanart_main"] = "tvshow"
-                                                        logger.debug(f"Added extrafanart main: {extrafanart_path}")
-                                                    else:
-                                                        # Use filename as key (fanart2.jpg -> extrafanart2, etc.)
-                                                        key_name = f"extrafanart_{filename.lower().replace('.jpg', '').replace('.jpeg', '').replace('.png', '')}"
-                                                        fanart_variants[key_name] = extrafanart_path
-                                                        if enable_share and media_type == "episode":
-                                                            key_scope[key_name] = "tvshow"
-                                                        logger.debug(f"Added extrafanart: {key_name} -> {extrafanart_path}")
+
+                                            for key_name, extra_path in collect_extrafanart_variants(extrafanart_files).items():
+                                                fanart_variants[key_name] = extra_path
+                                                if enable_share and media_type == "episode":
+                                                    key_scope[key_name] = "tvshow"
+                                                logger.debug("Added extrafanart: %s -> %s", key_name, extra_path)
                                         else:
                                             logger.debug(f"Failed to scan extrafanart directory: {extrafanart_response}")
                                             
@@ -984,7 +532,7 @@ def _prepare_and_download_art_locked(item, session_id, server, progress_cb=None,
                     logger.debug(f"Directory listing failed: {dir_e}")
                     
                     # Fallback: try to find fanart1, fanart2, etc. by testing individual files
-                    logger.debug(f"Falling back to individual file testing")
+                    logger.debug("Falling back to individual file testing")
                     for i in range(1, 10):  # fanart1 through fanart9
                         fanart_filename = f"fanart{i}.jpg"
                         fanart_path = f"{media_dir}/{fanart_filename}"
@@ -1466,8 +1014,9 @@ def _prepare_and_download_art_locked(item, session_id, server, progress_cb=None,
                                 elif path:
                                     fallback_image_url = f"{server['host']}/{path}"
                                 else:
-                                    pass
-                                
+                                    # No usable download target — never reuse the previous candidate's URL
+                                    continue
+
                                 # Try to download the fallback image
                                 logger.debug(f"Trying to download fallback: {fallback_image_url}")
                                 r = requests.get(fallback_image_url, auth=server['auth'], timeout=5)
@@ -1552,199 +1101,3 @@ def _prepare_and_download_art_locked(item, session_id, server, progress_cb=None,
     logger.debug("Downloaded fanart keys: %s", [k for k in downloaded.keys() if k.startswith(("fanart", "extrafanart"))])
     
     return downloaded, share_out
-
-def cleanup_old_artwork_files():
-    try:
-        now_ts = time.time()
-        removed = 0
-        protected = cached_art_filenames()
-        for filename in os.listdir(_c.ART_TMP_DIR):
-            if not is_artwork_filename(filename):
-                continue
-            if filename in protected:
-                continue
-            path = os.path.join(_c.ART_TMP_DIR, filename)
-            try:
-                stat = os.stat(path)
-                if (now_ts - stat.st_mtime) >= _c.ART_CLEANUP_AGE_SECONDS:
-                    os.remove(path)
-                    removed += 1
-            except Exception as file_e:
-                logger.debug(f"Artwork cleanup skipped {path}: {file_e}")
-        candidates = []
-        total_bytes = 0
-        for filename in os.listdir(_c.ART_TMP_DIR):
-            if not is_artwork_filename(filename) or filename in protected:
-                continue
-            path = os.path.join(_c.ART_TMP_DIR, filename)
-            try:
-                stat = os.stat(path)
-                candidates.append((stat.st_mtime, filename, stat.st_size))
-                total_bytes += stat.st_size
-            except OSError:
-                continue
-        max_bytes = max(0, _c.CACHE_MAX_ART_MB) * 1024 * 1024
-        candidates.sort()
-        while (
-            len(candidates) > max(0, _c.CACHE_MAX_ART_FILES)
-            or (max_bytes and total_bytes > max_bytes)
-        ):
-            _, filename, size = candidates.pop(0)
-            try:
-                os.remove(os.path.join(_c.ART_TMP_DIR, filename))
-                total_bytes -= size
-                removed += 1
-            except OSError:
-                break
-        if removed:
-            logger.info(f"Artwork cleanup removed {removed} files")
-    except Exception as e:
-        logger.debug(f"Artwork cleanup failed: {e}")
-
-def download_fanart_variant(path: str, key: str, session_id: str, server_id=None):
-    """Download one deferred fanart after first paint. Returns local filename or None.
-
-    Uses the per-server art lock. Prefers share filenames when cache share identity
-    is available (episode tvshow / song artist); otherwise session-scoped files.
-    """
-    if not path or not isinstance(path, str) or not key or not isinstance(key, str):
-        return None
-    if not session_id or not isinstance(session_id, str):
-        return None
-    # Sanitize key for filenames
-    safe_key = re.sub(r"[^A-Za-z0-9_.-]", "_", key)[:80]
-    if not safe_key.startswith(("fanart", "extrafanart")):
-        return None
-
-    server = get_active_server() if server_id is None else _c.KODI_SERVERS.get(server_id)
-    if not server:
-        return None
-    sid = server.get("id")
-
-    prefs = load_preferences()
-    try:
-        min_fanart_kb = int(prefs.get("fanartMinSizeKB", 200))
-    except (TypeError, ValueError):
-        min_fanart_kb = 200
-    min_fanart_bytes = max(0, min_fanart_kb) * 1024
-
-    def _size_ok(local_path: str) -> bool:
-        if min_fanart_bytes <= 0:
-            return True
-        try:
-            size = os.path.getsize(local_path)
-            if size >= min_fanart_bytes:
-                return True
-            os.remove(local_path)
-            return False
-        except Exception:
-            return True
-
-    with _art_lock_for(sid):
-        filename = f"{session_id}_{safe_key}.jpg"
-        # Prefer share file when we know show/artist identity from cache
-        try:
-            from kodi_np.cache import get_cache_entry, set_cache_entry
-            entry = get_cache_entry(sid) or {}
-            share = dict(entry.get("share") or empty_share())
-            tvshow_id = share.get("tvshow_id")
-            artist_id = share.get("artist_id")
-            if tvshow_id is not None:
-                filename = share_art_filename(sid, "tvshow", tvshow_id, safe_key)
-            elif artist_id is not None and safe_key.startswith(("fanart", "extrafanart")):
-                filename = share_art_filename(sid, "artist", artist_id, safe_key)
-        except Exception:
-            share = None
-            entry = None
-
-        local_path = os.path.join(_c.ART_TMP_DIR, filename)
-        if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
-            if _size_ok(local_path):
-                return filename
-            try:
-                os.remove(local_path)
-            except Exception:
-                pass
-
-        image_url = None
-        if path.startswith("http://") or path.startswith("https://"):
-            image_url = path
-        else:
-            image_url = _kodi_image_download_url(path, server)
-        if not image_url:
-            return None
-        try:
-            _http_get_to_file(image_url, local_path, server, timeout=8)
-            if not _size_ok(local_path):
-                return None
-            # Persist into share cache art_files when applicable
-            try:
-                if share is not None and entry is not None:
-                    scope = "tvshow" if share.get("tvshow_id") is not None else (
-                        "artist" if share.get("artist_id") is not None else None
-                    )
-                    if scope:
-                        share.setdefault("art_files", {}).setdefault(scope, {})[safe_key] = filename
-                        share.setdefault("art_sources", {}).setdefault(scope, {})[safe_key] = normalize_art_source(path)
-                        set_cache_entry(sid, share=share)
-            except Exception as exc:
-                logger.debug("fanart share cache update skipped: %s", exc)
-            logger.debug("Downloaded deferred fanart %s to %s", safe_key, local_path)
-            return filename
-        except Exception as exc:
-            logger.debug("Deferred fanart download failed for %s: %s", safe_key, exc)
-            return None
-
-
-def download_cast_thumbnail(thumbnail_path: str, server_id=None):
-    """Download one cast thumbnail on demand. Returns local filename or None.
-
-    Does not block now-playing page builds — call from a lazy API after first paint.
-    """
-    if not thumbnail_path or not isinstance(thumbnail_path, str):
-        return None
-    # Skip Kodi default placeholders
-    lowered = thumbnail_path.lower()
-    if "defaultactor" in lowered or "defaultimage" in lowered:
-        return None
-
-    server = get_active_server() if server_id is None else _c.KODI_SERVERS.get(server_id)
-    if not server:
-        return None
-
-    digest = hashlib.md5(normalize_art_source(thumbnail_path).encode("utf-8")).hexdigest()
-    filename = f"cast_{digest}_actor.jpg"
-    local_path = _c.ART_TMP_PATH / filename
-    if local_path.exists() and local_path.stat().st_size > 0:
-        return filename
-
-    image_url = _kodi_image_download_url(thumbnail_path, server)
-    if not image_url:
-        return None
-    try:
-        if server.get("auth"):
-            response = requests.get(image_url, auth=server["auth"], timeout=8)
-        else:
-            response = requests.get(image_url, timeout=8)
-        response.raise_for_status()
-        if not response.content:
-            return None
-        with open(local_path, "wb") as handle:
-            handle.write(response.content)
-        logger.debug("Downloaded cast thumb to %s", local_path)
-        return filename
-    except Exception as exc:
-        logger.debug("Cast thumb download failed: %s", exc)
-        return None
-
-
-def resolve_safe_child(base_dir: Path, filename: str):
-    if not filename or "/" in filename or "\\" in filename:
-        return None
-    try:
-        path = (base_dir / filename).resolve()
-        if not path.is_relative_to(base_dir):
-            return None
-        return path
-    except Exception:
-        return None

@@ -400,6 +400,27 @@ docker compose build --no-cache kodi-np-multi
 docker compose up -d kodi-np-multi
 ```
 
+### Upgrading to 3.1.5 (unprivileged container)
+
+From 3.1.5 the container no longer runs as root. It runs as `1000:1000` by
+default, so the two bind-mounted directories must be owned by that user.
+Run this once before starting the new image:
+
+```bash
+sudo chown -R 1000:1000 ./kodi-np-multi/tmp ./kodi-np-multi/preferences
+```
+
+If your host user is not `1000`, set `PUID` / `PGID` in `.env` and rebuild so
+the image and the runtime user agree:
+
+```bash
+PUID=$(id -u)
+PGID=$(id -g)
+```
+
+Symptoms of a mismatch are permission errors writing `/app/tmp` (artwork never
+appears) or `/app/preferences` (settings do not persist).
+
 ### Tests
 
 From the repository root (Python 3.12+):
@@ -407,6 +428,7 @@ From the repository root (Python 3.12+):
 ```bash
 pip install -r requirements-dev.txt
 python -m pytest -q
+python -m ruff check kodi-np-multi tests
 ```
 
 Start playing media on a configured Kodi device, then open:
@@ -429,5 +451,12 @@ Replace `<host>` with the IP or hostname of the machine running Docker. For a wa
 
 ## Network Exposure
 
-This dashboard is intended for a trusted local network or VPN. It does not include built-in user authentication, and it exposes now-playing data plus preference/server-management endpoints. Do not publish port `6001` directly to the internet. If remote access is needed, place it behind a reverse proxy or another access-control layer (for example Traefik, Caddy, or nginx basic auth / Authelia).
+This dashboard is intended for a trusted local network or VPN. Do not publish port `6001` directly to the internet. If remote access is needed, place it behind a reverse proxy or another access-control layer (for example Traefik, Caddy, or nginx basic auth / Authelia).
+
+Authentication is **off unless `BASIC_AUTH` is set**. While it is off, every API endpoint — including server management, preferences, and artwork fetching — is usable by anything that can reach the port. Set `BASIC_AUTH` for any deployment beyond a trusted LAN.
+
+Two further controls are available:
+
+- `KODI_HOST_ALLOWLIST` restricts which hosts user-added Kodi servers may point at.
+- Custom server credentials are stored in plaintext in `preferences/preferences.json`, so keep that volume on trusted storage.
 

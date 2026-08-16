@@ -1,6 +1,14 @@
 FROM python:3.12-slim
 
-ENV TZ=UTC
+ENV TZ=UTC \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Must match the owner of the mounted ./tmp and ./preferences directories.
+# Override at build time when your host user is not 1000:
+#   docker compose build --build-arg APP_UID=$(id -u) --build-arg APP_GID=$(id -g)
+ARG APP_UID=1000
+ARG APP_GID=1000
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends tzdata \
@@ -17,7 +25,14 @@ COPY nowplaying-common.js /app/
 COPY kodi_np/ /app/kodi_np/
 COPY templates/ /app/templates/
 
-RUN mkdir -p /app/tmp /app/preferences
+RUN if ! getent group "${APP_GID}" >/dev/null; then groupadd --gid "${APP_GID}" app; fi \
+    && if ! getent passwd "${APP_UID}" >/dev/null; then \
+         useradd --uid "${APP_UID}" --gid "${APP_GID}" --no-create-home --shell /usr/sbin/nologin app; \
+       fi \
+    && mkdir -p /app/tmp /app/preferences \
+    && chown -R "${APP_UID}:${APP_GID}" /app
+
+USER ${APP_UID}:${APP_GID}
 
 EXPOSE 6001
 

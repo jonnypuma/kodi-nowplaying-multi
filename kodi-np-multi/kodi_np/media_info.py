@@ -1,6 +1,7 @@
 """Shared video stream / badge helpers for movie, episode, and generic video."""
 from __future__ import annotations
 
+import json
 import logging
 from html import escape
 from pathlib import Path
@@ -57,6 +58,27 @@ def fanart_variant_urls(downloaded_art: dict | None) -> list[str]:
     return urls
 
 
+def fanart_slides_html(fanart_variants, empty: str = "") -> str:
+    """Background slideshow markup; the first slide starts active."""
+    if not fanart_variants:
+        return empty
+    return "".join(
+        f'<div class="fanart-slide{" active" if i == 0 else ""}" '
+        f"style=\"background-image: url('{fanart}')\"></div>"
+        for i, fanart in enumerate(fanart_variants)
+    )
+
+
+def fanart_pending_json(details, session_id) -> str:
+    """Payload the page uses to lazily pull fanart that was deferred at build time."""
+    pending_items = []
+    art_session_id = session_id
+    if isinstance(details, dict):
+        pending_items = list(details.get("pending_fanarts") or [])
+        art_session_id = details.get("art_session_id") or session_id
+    return json.dumps({"session_id": art_session_id, "items": pending_items})
+
+
 def normalize_lang(code: str) -> str:
     raw = (code or "")[:3].upper()
     if not raw:
@@ -90,6 +112,27 @@ def language_sets(audio_info, subtitle_info, enhanced_video_info) -> dict:
         "all_audio": all_audio,
         "all_subtitles": all_subs,
     }
+
+
+def video_dimensions(enhanced_video_info, video_info) -> tuple[int, int]:
+    """Pixel size of the playing video, preferring live InfoLabels.
+
+    Kodi reports these as strings and sometimes as a literal ``"0"``, which is
+    truthy, so the InfoLabel is parsed before deciding whether to fall back to
+    the library's streamdetails.
+    """
+    enhanced = enhanced_video_info or {}
+    video_info = video_info or {}
+
+    def as_int(value) -> int:
+        try:
+            return int(str(value or 0).replace(",", ""))
+        except (ValueError, TypeError):
+            return 0
+
+    width = as_int(enhanced.get("Player.Process(VideoWidth)")) or as_int(video_info.get("width"))
+    height = as_int(enhanced.get("Player.Process(VideoHeight)")) or as_int(video_info.get("height"))
+    return width, height
 
 
 def resolution_label(width, height) -> str:
@@ -162,8 +205,11 @@ def codecs_and_channels(enhanced_video_info, video_info, audio_info) -> dict:
     return {"video_codec": video_codec, "audio_codec": audio_codec, "channels": channels}
 
 
-def fetch_player_streams(existing_audio=None, existing_subs=None) -> dict:
-    """Live InfoLabels + stream lists from the active Kodi player."""
+def fetch_player_streams(existing_audio=None, existing_subs=None, server_id=None) -> dict:
+    """Live InfoLabels + stream lists from the active Kodi player.
+
+    ``server_id`` pins the calls to one server; ``None`` targets the active one.
+    """
     from kodi_np.rpc import kodi_rpc
 
     audio_info = list(existing_audio or [])
@@ -171,7 +217,7 @@ def fetch_player_streams(existing_audio=None, existing_subs=None) -> dict:
     enhanced_video_info = {}
     player_id = 1
     try:
-        active_players_response = kodi_rpc("Player.GetActivePlayers", {})
+        active_players_response = kodi_rpc("Player.GetActivePlayers", {}, server_id=server_id)
         if active_players_response and active_players_response.get("result"):
             active_players = active_players_response.get("result") or []
             if active_players:
@@ -193,7 +239,7 @@ def fetch_player_streams(existing_audio=None, existing_subs=None) -> dict:
                 "VideoPlayer.SubtitlesLanguage",
                 "VideoPlayer.Year",
             ]
-        })
+        }, server_id=server_id)
         if infolabels_response and infolabels_response.get("result"):
             enhanced_video_info = infolabels_response.get("result") or {}
     except Exception as e:
@@ -203,7 +249,7 @@ def fetch_player_streams(existing_audio=None, existing_subs=None) -> dict:
         audio_streams_response = kodi_rpc("Player.GetProperties", {
             "playerid": player_id,
             "properties": ["audiostreams"],
-        })
+        }, server_id=server_id)
         if audio_streams_response and audio_streams_response.get("result"):
             audio_streams = audio_streams_response.get("result", {}).get("audiostreams") or []
             converted = []
@@ -225,7 +271,7 @@ def fetch_player_streams(existing_audio=None, existing_subs=None) -> dict:
         subtitle_streams_response = kodi_rpc("Player.GetProperties", {
             "playerid": player_id,
             "properties": ["subtitles"],
-        })
+        }, server_id=server_id)
         if subtitle_streams_response and subtitle_streams_response.get("result"):
             subtitle_streams = subtitle_streams_response.get("result", {}).get("subtitles") or []
             converted = []

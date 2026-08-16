@@ -1,0 +1,13 @@
+# Build context is ./kodi-np-multi, so the repo-root .dockerignore does not apply here.
+# Keep runtime state and secrets out of the context sent to the Docker daemon.
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+
+# Volume-mounted at runtime; preferences/ holds flask_secret_key and Kodi passwords.
+tmp/
+preferences/
+
+.env
+.env.*
+*.code-workspace

@@ -1,0 +1,75 @@
+        async function savePreference(key, value) {
+          // Save to localStorage immediately for responsiveness
+          localStorage.setItem(key, value);
+          
+          // Also save to server
+          try {
+            const response = await fetch('/api/preferences', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ [key]: value })
+            });
+            if (!response.ok) {
+              console.log(`[DEBUG] Failed to save preference ${key} to server, using localStorage only`);
+            }
+          } catch (error) {
+            console.log(`[DEBUG] Error saving preference ${key} to server:`, error);
+          }
+        }
+
+        async function savePreferencesBatch(updates) {
+          if (!updates || !Object.keys(updates).length) return;
+          Object.entries(updates).forEach(([key, value]) => localStorage.setItem(key, value));
+          try {
+            const response = await fetch('/api/preferences', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updates)
+            });
+            if (!response.ok) {
+              console.log('[DEBUG] Failed to batch-save preferences to server');
+            }
+          } catch (error) {
+            console.log('[DEBUG] Error batch-saving preferences:', error);
+          }
+        }
+        
+        // Blur Toggle Functionality
+        function toggleBlur() {
+          const content = document.querySelector('.content');
+          const blurToggle = document.getElementById('blurToggle');
+          const blurSliderContainer = document.getElementById('blurSliderContainer');
+          const isEnabled = blurToggle.checked;
+          
+          if (isEnabled) {
+            // Enable blur - apply saved blur amount
+            const savedBlurAmount = parseInt(localStorage.getItem('blurAmount') || '50');
+            content.style.backdropFilter = `blur(${savedBlurAmount / 10}px)`;
+            content.style.webkitBackdropFilter = `blur(${savedBlurAmount / 10}px)`;
+            blurSliderContainer.style.display = 'block';
+            savePreference('blurPreference', 'blurred');
+          } else {
+            // Disable blur - hide it
+            content.style.backdropFilter = 'none';
+            content.style.webkitBackdropFilter = 'none';
+            blurSliderContainer.style.display = 'none';
+            savePreference('blurPreference', 'non-blurred');
+          }
+        }
+        
+        function updateBlurAmount(value) {
+          const content = document.querySelector('.content');
+          const blurToggle = document.getElementById('blurToggle');
+          const blurValue = parseInt(value);
+          document.getElementById('blurValue').textContent = blurValue + '%';
+          
+          // Only apply blur if toggle is enabled
+          if (blurToggle.checked) {
+            content.style.backdropFilter = `blur(${blurValue / 10}px)`;
+            content.style.webkitBackdropFilter = `blur(${blurValue / 10}px)`;
+          }
+          
+          savePreference('blurAmount', blurValue.toString());
+        }
+        
+        // Overlay Toggle Functionality

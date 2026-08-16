@@ -1,4 +1,3 @@
-from pathlib import Path
 
 
 def test_health_endpoint(client, app_module):

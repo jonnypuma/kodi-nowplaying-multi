@@ -51,6 +51,18 @@ def is_auth_rpc_error(error) -> bool:
     err_text = str(error)
     return "401" in err_text or "unauthorized" in err_text.lower()
 
+def server_backoff_seconds_for_level(level: int) -> float:
+    """Length of the ``level``-th consecutive unreachable backoff.
+
+    Doubling from a short first pause keeps a transient blip -- a Kodi box that
+    has not finished booting, a network that is still coming up -- from costing
+    a full SERVER_FAIL_BACKOFF_SECONDS of false "offline".
+    """
+    initial = max(1, int(getattr(_c, "SERVER_FAIL_BACKOFF_INITIAL_SECONDS", 15)))
+    ceiling = max(initial, int(_c.SERVER_FAIL_BACKOFF_SECONDS))
+    return float(min(ceiling, initial * (2 ** max(0, int(level)))))
+
+
 def server_backoff_remaining(server_id):
     """Seconds left in unreachable backoff, or 0 if server may be contacted."""
     with _c.server_backoff_lock:
@@ -120,12 +132,15 @@ def note_server_rpc_failure(server_id, error):
         entry["fail_count"] = int(entry.get("fail_count") or 0) + increment
         entry["last_error"] = err_text
         if entry["fail_count"] >= _c.SERVER_FAIL_BACKOFF_AFTER:
-            entry["backoff_until"] = time.time() + _c.SERVER_FAIL_BACKOFF_SECONDS
+            level = int(entry.get("backoff_level") or 0)
+            pause = server_backoff_seconds_for_level(level)
+            entry["backoff_level"] = level + 1
+            entry["backoff_until"] = time.time() + pause
             _c.server_backoff[server_id] = entry
             logger.warning(
                 "Server %s unreachable — pausing polls for %ss (%s)",
                 server_id,
-                _c.SERVER_FAIL_BACKOFF_SECONDS,
+                int(pause),
                 err_text.split("(Caused by")[0].strip()[:120],
             )
             return True
@@ -151,7 +166,7 @@ def kodi_rpc(method, params=None, server_id=None, bypass_backoff=False):
         server = get_active_server()
     
     if not server:
-        logger.error(f"No Kodi server available")
+        logger.error("No Kodi server available")
         return None
 
     sid = server.get("id")

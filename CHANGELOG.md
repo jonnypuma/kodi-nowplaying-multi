@@ -5,6 +5,231 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.1] - 2026-08-16
+
+### Fixed
+- Every server showed as offline on the overview page after a cold start, and
+  only the per-tile Retry button brought them back. The cache poller makes its
+  first pass two seconds after Flask starts, so if a Kodi box was still booting
+  it answered with a hard-down error such as `Connection refused`. Those errors
+  jumped straight to the maximum backoff, meaning one badly timed attempt
+  silenced the server for the full `SERVER_FAIL_BACKOFF_SECONDS` (5 minutes by
+  default).
+- Unreachable backoff now starts at `SERVER_FAIL_BACKOFF_INITIAL_SECONDS`
+  (15s) and doubles per failed round up to `SERVER_FAIL_BACKOFF_SECONDS`,
+  resetting on the first success. A host that is slow to boot is retried in
+  seconds; a host that is genuinely gone still settles into long, quiet
+  intervals, so the log noise this backoff was added to stop does not return.
+- The overview page could not recover on its own even after the host came
+  back. Its initial load skipped any server in backoff, and neither the 12s
+  refresh nor the SSE stream performs a live probe, so nothing re-checked the
+  server until the backoff expired. Opening the page now probes a server that
+  has never been reached, since an "offline" we never confirmed is a guess.
+  Servers with a warm cache keep their backoff and answer from cache, and an
+  authentication failure is treated as a definite answer rather than a cold
+  server.
+
+### Added
+- `SERVER_FAIL_BACKOFF_INITIAL_SECONDS` (default 15), documented in
+  `.env.example`.
+
+## [3.4.0] - 2026-08-16
+
+### Changed
+- The inline JavaScript duplicated across the three nowplaying templates moves
+  into `templates/partials/`: `_save_preference.js.html`,
+  `_playback_button.js.html`, `_server_management.js.html`,
+  `_playback_polling.js.html`, `_server_switch.js.html`, and
+  `_playback_config.js.html`. Preference saving, the play/pause button, server
+  switching, and playback polling existed as three separate copies that had to
+  be kept in step by hand.
+- As with the CSS, each include sits where its copy used to, so execution order
+  is unchanged. Only runs at statement level that reference no template context
+  were extracted; anything touching a Jinja variable stayed inline.
+- Combined with 3.3.0 the templates are ~700 lines lighter each: movie
+  2256 → 1556, episode 2562 → 1862, music 2446 → 1746.
+
+## [3.3.0] - 2026-08-16
+
+### Changed
+- The marquee and side-panel CSS was copied verbatim into all three nowplaying
+  templates. It now lives in `templates/partials/` as `_marquee.css.html`,
+  `_side_panel_controls.css.html`, `_side_panel_dropdown.css.html`, and
+  `_side_panel_sections.css.html`, pulled in with `{% include %}`. The
+  templates shrink by 478 lines each (movie 2256 → 1778, episode 2562 → 2084,
+  music 2446 → 1968).
+- Each include sits exactly where the copied rules used to, so the cascade is
+  unchanged. This matters because the templates link `nowplaying-common.css`
+  *before* their inline `<style>`: rules moved into that file would quietly
+  lose ties they currently win, which is why only whole rule blocks that could
+  keep their position were extracted.
+
+### Added
+- `tests/test_template_partials.py` renders each page through Jinja and asserts
+  every shared partial is included and its rules reach the output, so a
+  renamed or dropped partial fails the suite instead of shipping an unstyled
+  page.
+
+## [3.2.1] - 2026-08-16
+
+### Changed
+- `episode_nowplaying.py` drops from 583 to 353 lines. The InfoLabels fetch,
+  audio/subtitle stream collection, language normalisation, resolution, codec,
+  aspect ratio, and container derivation were a hand-copied fork of the movie
+  builder; they now call the `media_info` helpers the movie builder already
+  used, so a fix to stream handling no longer has to be made twice.
+- The fanart slideshow markup and the deferred-fanart JSON payload were
+  duplicated across all three builders and are now
+  `media_info.fanart_slides_html()` and `media_info.fanart_pending_json()`.
+  Music keeps its own variant ordering and empty-state comment.
+- `media_info.fetch_player_streams()` takes an optional `server_id` so the
+  episode builder can keep pinning its RPCs to the server that owns the
+  playback rather than whichever server is currently active.
+- Application version is now `3.2.1`.
+
+### Fixed
+- Resolution could read as blank for episodes and movies when Kodi returned a
+  literal `"0"` for `Player.Process(VideoWidth/Height)`. The new
+  `media_info.video_dimensions()` parses the InfoLabel before deciding whether
+  to fall back to the library's streamdetails, which the movie builder's
+  truthiness check did not do.
+
+## [3.2.0] - 2026-08-16
+
+### Changed
+- `art.py` (1792 lines) is split into focused modules. Path parsing, download
+  URL building, and filesystem path safety move to `art_paths.py`; share-file
+  identity, scoping, and reuse to `art_share.py`; first-artwork selection to
+  `art_select.py`; artist-folder discovery for music to `art_music.py`; and
+  HTTP fetching, per-server locks, deferred downloads, and cache trimming to
+  `art_download.py`. `art.py` keeps the metadata-to-artwork orchestration and
+  re-exports the moved names, so existing `from kodi_np.art import ...` call
+  sites are unaffected.
+- Application version is now `3.2.0`.
+
+### Fixed
+- `tests/conftest.py` patched `kodi_rpc` and `get_active_server` only on
+  `kodi_np.art`. The split modules bind their own references, so RPC stubs
+  would have leaked to the real network from `art_paths`, `art_music`, and
+  `art_download`; all three are now patched too.
+
+## [3.1.9] - 2026-08-16
+
+### Added
+- Tests for the previously uncovered surface: SSE streaming (`/api/events`),
+  server CRUD and preference mutation routes, the login gate (page redirect vs
+  API 401, logout, rate limiting, redirect hardening), static asset and
+  artwork routes including image-type sniffing, `/api/diagnostics`,
+  `/api/cast-thumb`, the load-job lifecycle, and Flask secret key persistence.
+  The suite grows from 141 to 253 tests.
+- CI now runs `ruff` as its own job, collects coverage with `pytest-cov`, and
+  asserts the built image does not run as uid 0.
+
+### Changed
+- Application version is now `3.1.9`.
+
+## [3.1.8] - 2026-08-16
+
+### Changed
+- `load_preferences()` caches the parsed file and re-reads only when
+  `preferences.json` changes on disk. It previously reopened and reparsed the
+  file on every call, which happens per deferred fanart download and on every
+  poller tick. Writes through `save_preferences()` / `update_preferences()`
+  invalidate the cache, and an external edit is picked up via the file's
+  size and mtime.
+- `ensure_preferences_dir()` no longer performs an `exists()` syscall building
+  a debug message that was discarded at the default log level.
+- The three identical copies of `to_secs()` in `nowplaying.py` and
+  `routes/playback.py` are now one `kodi_time_to_seconds()` in `util.py`,
+  which also tolerates missing, null, and non-numeric fields instead of
+  raising.
+- Application version is now `3.1.8`.
+
+## [3.1.7] - 2026-08-16
+
+### Added
+- Application-wide error handlers in `kodi_np/errors.py`. Requests under
+  `/api/` (or with an explicit JSON `Accept`) now get a JSON body with
+  `success`, `error`, and `status`, so front-end `response.json()` calls no
+  longer fail on Werkzeug's HTML error page. Everything else gets a styled
+  `error.html` matching the sign-in page.
+- Unhandled exceptions are logged with a traceback and return a generic 500
+  that does not expose the exception message.
+
+### Changed
+- Application version is now `3.1.7`.
+
+## [3.1.6] - 2026-08-16
+
+### Removed
+- `generate_fallback_html()`, an unreachable 80-line HTML page in
+  `nowplaying.py` that nothing had called since the modular renderers landed.
+- `startMarqueeShimmer()` from `nowplaying-common.js`. All three now-playing
+  templates ship their own shimmer loop and none referenced the shared one.
+- Roughly 30 dead local variables across the movie, episode, and music page
+  builders — metadata pulled out of Kodi responses and then discarded
+  (`artist_bio`, `song_bpm`, `audio_languages`, `resolution`, and similar).
+- Unused imports in `cache.py`, `nowplaying.py`, `routes/playback.py`, and
+  `routes/servers_prefs.py`.
+
+### Added
+- `ruff.toml` and `ruff` in `requirements-dev.txt`. The config exempts the
+  compat shim modules, whose re-exports are deliberate. `ruff check` is clean.
+
+### Changed
+- Application version is now `3.1.6`.
+
+## [3.1.5] - 2026-08-16
+
+### Security
+- The container runs as an unprivileged user (`1000:1000` by default, override
+  with `PUID` / `PGID`) instead of root, with `no-new-privileges` and all
+  capabilities dropped.
+- Added `kodi-np-multi/.dockerignore`. The build context is `./kodi-np-multi`,
+  so the repo-root ignore file never applied and every build uploaded the
+  artwork cache plus `preferences/` (Flask secret key and plaintext Kodi
+  passwords) to the Docker daemon.
+
+### Upgrading
+- Existing installs must hand the bind mounts to the new user once:
+  `sudo chown -R 1000:1000 ./kodi-np-multi/tmp ./kodi-np-multi/preferences`.
+  Without this, artwork and preference writes fail. See the README.
+
+### Changed
+- Application version is now `3.1.5`.
+
+## [3.1.4] - 2026-08-16
+
+### Security
+- `POST /api/fanart` no longer fetches arbitrary URLs. Deferred artwork paths
+  always come from Kodi, so a raw `http(s)` path is now only accepted when it
+  resolves to the configured Kodi host. Previously any caller could make the
+  container issue a request to a host of their choosing.
+- Sign-in honours only same-origin relative `next` targets. `//evil.example`
+  passed the old `startswith("/")` check and redirected off-site.
+- New optional `KODI_HOST_ALLOWLIST` restricts which hosts custom Kodi servers
+  may point at. Unset (default) keeps existing behaviour.
+
+### Changed
+- Application version is now `3.1.4`.
+
+## [3.1.3] - 2026-08-16
+
+### Fixed
+- Extrafanart scanning no longer misreads directory listings. A misindented
+  branch ran the filename check for every entry, so a non-image entry
+  (subfolder, `.nfo`) either raised a swallowed `NameError` that aborted the
+  whole scan, or reused the previous file's name and registered a fanart
+  variant under the wrong key.
+- Artwork fallback downloads no longer reuse the previous candidate's URL when
+  Kodi returns neither a token nor a path, which could store an image under the
+  wrong source path and poison share reuse.
+
+### Changed
+- Extrafanart listing is parsed by `collect_extrafanart_variants()` instead of
+  a loop nested ten levels deep inside the art builder.
+- Application version is now `3.1.3`.
+
 ## [3.1.2] - 2026-08-14
 
 ### Fixed

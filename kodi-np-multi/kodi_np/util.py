@@ -8,6 +8,20 @@ from html import escape
 from kodi_np import config as _c
 
 
+def kodi_time_to_seconds(chunk) -> int:
+    """Convert a Kodi ``{"hours", "minutes", "seconds"}`` block to whole seconds."""
+    if not isinstance(chunk, dict):
+        return 0
+    try:
+        return (
+            int(chunk.get("hours", 0) or 0) * 3600
+            + int(chunk.get("minutes", 0) or 0) * 60
+            + int(chunk.get("seconds", 0) or 0)
+        )
+    except (TypeError, ValueError):
+        return 0
+
+
 def build_cast_html(cast_list, limit=8):
     """Render a cast strip with names immediately; thumbs lazy-load via data-thumb.
 

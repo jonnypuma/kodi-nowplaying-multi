@@ -16,7 +16,6 @@ from kodi_np.preferences import (
     update_preferences,
     validate_preferences_update,
 )
-from kodi_np.rpc import kodi_rpc
 from kodi_np.servers import (
     add_custom_server,
     delete_custom_server,

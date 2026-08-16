@@ -12,20 +12,16 @@ from kodi_np import config as _c
 from kodi_np.cache import (
     _poll_state_for,
     get_cache_entry,
-    make_playback_fingerprint,
     probe_playback_fingerprint,
-    refresh_server_cache,
-    store_playing_cache,
 )
 from kodi_np.nowplaying import (
     build_nowplaying_html,
     build_nowplaying_soft_update,
     run_nowplaying_job,
-    update_job,
 )
 from kodi_np.rpc import kodi_rpc
 from kodi_np.servers import get_active_server
-from kodi_np.util import prune_load_jobs
+from kodi_np.util import kodi_time_to_seconds, prune_load_jobs
 
 logger = logging.getLogger("kodi.nowplaying")
 
@@ -343,10 +339,9 @@ def now_playing():
         t = progress.get("time", {})
         d = progress.get("totaltime", {})
         speed = progress.get("speed", 0)
-        def to_secs(t): return t.get("hours", 0) * 3600 + t.get("minutes", 0) * 60 + t.get("seconds", 0)
         return jsonify({
-            "elapsed": to_secs(t),
-            "duration": to_secs(d),
+            "elapsed": kodi_time_to_seconds(t),
+            "duration": kodi_time_to_seconds(d),
             "paused": speed == 0
         })
     return build_nowplaying_html()

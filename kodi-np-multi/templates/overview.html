@@ -586,11 +586,11 @@
                     knownServerIds = servers.map(server => server.id);
                     render(servers);
                     updated.textContent = 'Checking servers…';
-                    await Promise.all(
-                        servers
-                            .filter(server => !(Number(server.backoff_remaining) > 0))
-                            .map(server => probeServer(server.id))
-                    );
+                    // Probe every tile and let the server decide whether that means a real
+                    // Kodi call: a backed-off host we have reached before answers from cache,
+                    // while one we have never reached is contacted so an unconfirmed
+                    // "offline" does not stick until the backoff expires.
+                    await Promise.all(servers.map(server => probeServer(server.id)));
                     updated.textContent = 'Auto-refresh every ' + Math.round(REFRESH_MS / 1000) + 's · updated ' + new Date().toLocaleTimeString();
                     maybeAutoSwitch(latestServers);
                 } catch (e) {

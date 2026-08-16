@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import re
 import time
 import uuid
 
@@ -29,7 +28,7 @@ from kodi_np.parser import infer_playback_type, route_media_display
 from kodi_np.playlist import get_up_next_label
 from kodi_np.rpc import kodi_rpc
 from kodi_np.servers import get_active_server
-from kodi_np.util import html_escape, prune_load_jobs
+from kodi_np.util import kodi_time_to_seconds
 
 logger = logging.getLogger("kodi.nowplaying")
 
@@ -104,7 +103,7 @@ def build_nowplaying_html(progress_cb=None, session_id=None, as_payload=False):
         if playback_type == "episode":
             try:
                 update(24, "Loading episode metadata")
-                logger.debug(f"Getting enhanced details for episode")
+                logger.debug("Getting enhanced details for episode")
                 episode_response = kodi_rpc("VideoLibrary.GetEpisodeDetails", {
                     "episodeid": item.get("id"),
                 "properties": ["streamdetails", "genre", "director", "cast", "uniqueid", "rating", "studio"]
@@ -124,7 +123,7 @@ def build_nowplaying_html(progress_cb=None, session_id=None, as_payload=False):
                         "cast": item.get("cast", []),
                         "year": item.get("year", "")
                     })
-                    logger.debug(f"Enhanced episode details loaded")
+                    logger.debug("Enhanced episode details loaded")
                 tvshowid = item.get("tvshowid")
                 build_share["tvshow_id"] = tvshowid
                 build_share["season"] = item.get("season")
@@ -193,7 +192,7 @@ def build_nowplaying_html(progress_cb=None, session_id=None, as_payload=False):
         elif playback_type == "movie":
             try:
                 update(24, "Loading movie metadata")
-                logger.debug(f"Getting enhanced details for movie")
+                logger.debug("Getting enhanced details for movie")
                 movie_response = kodi_rpc("VideoLibrary.GetMovieDetails", {
                     "movieid": item.get("id"),
                 "properties": ["streamdetails", "genre", "director", "cast", "uniqueid", "rating", "studio", "tagline"]
@@ -210,14 +209,14 @@ def build_nowplaying_html(progress_cb=None, session_id=None, as_payload=False):
                         "cast": item.get("cast", []),
                         "year": item.get("year", "")
                     })
-                    logger.debug(f"Enhanced movie details loaded")
+                    logger.debug("Enhanced movie details loaded")
             except Exception as e:
                 logger.warning(f"Failed to get enhanced movie details: {e}")
                 logger.debug(f"Using basic item data for {playback_type}")
         elif playback_type == "song":
             try:
                 update(24, "Loading song metadata")
-                logger.debug(f"Getting enhanced details for song")
+                logger.debug("Getting enhanced details for song")
                 logger.debug(f"Basic item ID: {item.get('id')}")
                 # Get song details using the basic item ID
                 song_response = kodi_rpc("AudioLibrary.GetSongDetails", {
@@ -228,7 +227,7 @@ def build_nowplaying_html(progress_cb=None, session_id=None, as_payload=False):
                 if song_response and song_response.get("result"):
                     song_details = song_response["result"].get("songdetails", {})
                     details.update(song_details)
-                    logger.debug(f"Enhanced song details loaded")
+                    logger.debug("Enhanced song details loaded")
                 
                 # Get album details if we have albumid
                 albumid = song_details.get("albumid")
@@ -247,7 +246,7 @@ def build_nowplaying_html(progress_cb=None, session_id=None, as_payload=False):
                             })
                             if album_response and album_response.get("result"):
                                 album_details = album_response["result"].get("albumdetails", {}) or {}
-                                logger.debug(f"Enhanced album details loaded")
+                                logger.debug("Enhanced album details loaded")
                         except Exception as e:
                             logger.warning(f"Failed to get album details: {e}")
                     # Online album text (TheAudioDB/Wikipedia) is loaded async after page render
@@ -271,7 +270,7 @@ def build_nowplaying_html(progress_cb=None, session_id=None, as_payload=False):
                             })
                             if artist_response and artist_response.get("result"):
                                 artist_details = artist_response["result"].get("artistdetails", {}) or {}
-                                logger.debug(f"Enhanced artist details loaded")
+                                logger.debug("Enhanced artist details loaded")
                         except Exception as e:
                             logger.warning(f"Failed to get artist details: {e}")
                     # Online artist bio is loaded async after page render
@@ -301,10 +300,8 @@ def build_nowplaying_html(progress_cb=None, session_id=None, as_payload=False):
         t = progress.get("time", {})
         d = progress.get("totaltime", {})
         speed = progress.get("speed", 0)
-        def to_secs(t): return t.get("hours", 0) * 3600 + t.get("minutes", 0) * 60 + t.get("seconds", 0)
-        elapsed = to_secs(t)
-        duration = to_secs(d)
-        percent = int((elapsed / duration) * 100) if duration else 0
+        elapsed = kodi_time_to_seconds(t)
+        duration = kodi_time_to_seconds(d)
         paused = speed == 0
 
         cleanup_old_artwork_files()
@@ -469,11 +466,8 @@ def build_nowplaying_soft_update(prev):
     d = progress.get("totaltime", {}) or {}
     speed = progress.get("speed", 0)
 
-    def to_secs(chunk):
-        return chunk.get("hours", 0) * 3600 + chunk.get("minutes", 0) * 60 + chunk.get("seconds", 0)
-
-    elapsed = to_secs(t)
-    duration = to_secs(d)
+    elapsed = kodi_time_to_seconds(t)
+    duration = kodi_time_to_seconds(d)
     paused = speed == 0
 
     if media_type == "episode":
@@ -799,82 +793,3 @@ def _soft_update_song(item, prev, prev_type, prior_share, active_server_id, elap
             "artist_id": artist_id,
         },
     }
-
-def generate_fallback_html(item, progress_data):
-    """Generate basic HTML when the modular system fails"""
-    title = html_escape(item.get("title", "Unknown Title"))
-    artist = html_escape(", ".join(item.get("artist", [])) if item.get("artist") else "Unknown Artist")
-    album = html_escape(item.get("album", ""))
-    elapsed = progress_data.get("elapsed", 0)
-    duration = progress_data.get("duration", 0)
-    paused = progress_data.get("paused", False)
-    
-    # Format time
-    def format_time(seconds):
-        if seconds == 0:
-            return "0:00"
-        minutes = int(seconds // 60)
-        secs = int(seconds % 60)
-        return f"{minutes}:{secs:02d}"
-    
-    return f"""
-    <html>
-    <head>
-        <title>Now Playing - {title}</title>
-        <style>
-            body {{
-                margin: 0;
-                padding: 0;
-                background: linear-gradient(to bottom right, #222, #444);
-                font-family: sans-serif;
-                color: white;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                height: 100vh;
-            }}
-            .now-playing {{
-                background: rgba(0,0,0,0.6);
-                padding: 40px;
-                border-radius: 12px;
-                box-shadow: 0 4px 20px rgba(0,0,0,0.8);
-                text-align: center;
-                max-width: 600px;
-            }}
-            .title {{
-                font-size: 2em;
-                font-weight: bold;
-                margin-bottom: 10px;
-            }}
-            .artist {{
-                font-size: 1.5em;
-                margin-bottom: 5px;
-                color: #ccc;
-            }}
-            .album {{
-                font-size: 1.2em;
-                margin-bottom: 20px;
-                color: #aaa;
-            }}
-            .progress {{
-                font-size: 1em;
-                color: #888;
-            }}
-            .status {{
-                font-size: 1.2em;
-                margin-top: 20px;
-                color: {'#ff6b6b' if paused else '#4caf50'};
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="now-playing">
-            <div class="title">{title}</div>
-            <div class="artist">{artist}</div>
-            <div class="album">{album}</div>
-            <div class="progress">{format_time(elapsed)} / {format_time(duration)}</div>
-            <div class="status">{'⏸️ Paused' if paused else '▶️ Playing'}</div>
-        </div>
-    </body>
-    </html>
-    """

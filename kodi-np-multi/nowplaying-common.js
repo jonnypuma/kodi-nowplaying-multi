@@ -855,22 +855,6 @@
 
       setInterval(pollOnce, pollMs);
       pollOnce();
-    },
-
-    startMarqueeShimmer: function (intervalSec) {
-      if (window._npShimmerTimer) clearInterval(window._npShimmerTimer);
-      var ms = Math.max(5, parseInt(intervalSec, 10) || 10) * 1000;
-      window._npShimmerTimer = setInterval(function () {
-        var marqueeText = document.querySelector(".marquee-text");
-        if (!marqueeText || marqueeText.classList.contains("hidden")) return;
-        marqueeText.classList.remove("shimmer");
-        var letters = marqueeText.querySelectorAll(".letter");
-        letters.forEach(function (letter) { letter.style.animation = "none"; });
-        void marqueeText.offsetHeight;
-        letters.forEach(function (letter) { letter.style.animation = ""; });
-        marqueeText.classList.add("shimmer");
-        setTimeout(function () { marqueeText.classList.remove("shimmer"); }, 2000);
-      }, ms);
     }
   };
 }());

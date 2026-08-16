@@ -7,23 +7,62 @@ def test_read_timeout_does_not_enter_backoff(app_module):
     assert app_module.server_backoff_remaining(1) == 0
 
 
-def test_hard_down_backs_off_immediately(app_module):
+REFUSED = (
+    "HTTPConnectionPool(host='192.168.0.21', port=6666): Max retries exceeded with url: /jsonrpc "
+    "(Caused by NewConnectionError(\"HTTPConnection(host='192.168.0.21', port=6666): "
+    "Failed to establish a new connection: [Errno 111] Connection refused\"))"
+)
+
+
+def test_hard_down_backs_off_immediately_but_only_briefly(app_module):
+    """A host that is merely booting must not cost a full backoff window."""
     app_module.server_backoff.clear()
     app_module.SERVER_FAIL_BACKOFF_AFTER = 3
     app_module.SERVER_FAIL_BACKOFF_SECONDS = 300
-    refused = (
-        "HTTPConnectionPool(host='192.168.0.21', port=6666): Max retries exceeded with url: /jsonrpc "
-        "(Caused by NewConnectionError(\"HTTPConnection(host='192.168.0.21', port=6666): "
-        "Failed to establish a new connection: [Errno 111] Connection refused\"))"
-    )
-    assert app_module.note_server_rpc_failure(5, refused) is True
-    assert app_module.server_backoff_remaining(5) > 290
+    app_module.SERVER_FAIL_BACKOFF_INITIAL_SECONDS = 15
+
+    assert app_module.note_server_rpc_failure(5, REFUSED) is True
+    remaining = app_module.server_backoff_remaining(5)
+    assert 0 < remaining <= 15
+
+
+def test_backoff_escalates_towards_the_ceiling(app_module):
+    app_module.server_backoff.clear()
+    app_module.SERVER_FAIL_BACKOFF_AFTER = 1
+    app_module.SERVER_FAIL_BACKOFF_SECONDS = 300
+    app_module.SERVER_FAIL_BACKOFF_INITIAL_SECONDS = 15
+
+    seen = []
+    for _ in range(6):
+        app_module.note_server_rpc_failure(7, REFUSED)
+        seen.append(app_module.server_backoff_remaining(7))
+        # Expire the window so the next failure escalates instead of being a no-op.
+        app_module.server_backoff[7]["backoff_until"] = 0
+
+    assert [round(x) for x in seen] == [15, 30, 60, 120, 240, 300]
+
+
+def test_backoff_level_resets_after_success(app_module):
+    app_module.server_backoff.clear()
+    app_module.SERVER_FAIL_BACKOFF_AFTER = 1
+    app_module.SERVER_FAIL_BACKOFF_SECONDS = 300
+    app_module.SERVER_FAIL_BACKOFF_INITIAL_SECONDS = 15
+
+    app_module.note_server_rpc_failure(8, REFUSED)
+    app_module.server_backoff[8]["backoff_until"] = 0
+    app_module.note_server_rpc_failure(8, REFUSED)
+    assert app_module.server_backoff_remaining(8) > 15
+
+    app_module.note_server_rpc_success(8)
+    app_module.note_server_rpc_failure(8, REFUSED)
+    assert app_module.server_backoff_remaining(8) <= 15
 
 
 def test_server_backoff_after_three_soft_failures(app_module):
     app_module.server_backoff.clear()
     app_module.SERVER_FAIL_BACKOFF_AFTER = 3
     app_module.SERVER_FAIL_BACKOFF_SECONDS = 300
+    app_module.SERVER_FAIL_BACKOFF_INITIAL_SECONDS = 15
 
     assert app_module.note_server_rpc_failure(1, "Connection reset") is False
     assert app_module.note_server_rpc_failure(1, "Connection reset") is False
@@ -31,7 +70,7 @@ def test_server_backoff_after_three_soft_failures(app_module):
 
     entered = app_module.note_server_rpc_failure(1, "Connection reset")
     assert entered is True
-    assert app_module.server_backoff_remaining(1) > 290
+    assert 0 < app_module.server_backoff_remaining(1) <= 15
 
     assert app_module.note_server_rpc_failure(1, "Connection reset") is True
     assert app_module.server_backoff_remaining(1) > 0

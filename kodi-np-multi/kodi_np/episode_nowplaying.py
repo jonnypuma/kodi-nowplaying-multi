@@ -7,8 +7,22 @@ import logging
 
 from flask import render_template
 
-from kodi_np.codecs import format_audio_codec, format_hdr_label, format_video_codec
-from kodi_np.media_info import fanart_variant_urls, format_playback_time, html_escape, up_next_html as build_up_next_html
+from kodi_np.codecs import format_hdr_label
+from kodi_np.media_info import (
+    aspect_ratio_label,
+    codecs_and_channels,
+    container_label,
+    fanart_pending_json as build_fanart_pending_json,
+    fanart_slides_html as build_fanart_slides_html,
+    fanart_variant_urls,
+    fetch_player_streams,
+    format_playback_time,
+    html_escape,
+    language_sets,
+    resolution_label,
+    up_next_html as build_up_next_html,
+    video_dimensions,
+)
 from kodi_np.tv_nfo import format_season_plot_heading
 from kodi_np.util import build_cast_html, build_meta_labeled_line, build_meta_labeled_lines
 
@@ -36,12 +50,10 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     season_poster_url = f"/media/{downloaded_art.get('season.poster')}" if downloaded_art.get("season.poster") else ""
     
     fanart_variants = fanart_variant_urls(downloaded_art)
-    fanart_url = fanart_variants[0] if fanart_variants else ""
     logger.debug("Episode fanart variants found: %s", len(fanart_variants))
     
     banner_url = f"/media/{downloaded_art.get('banner')}" if downloaded_art.get("banner") else ""
     clearlogo_url = f"/media/{downloaded_art.get('clearlogo')}" if downloaded_art.get("clearlogo") else ""
-    clearart_url = f"/media/{downloaded_art.get('clearart')}" if downloaded_art.get("clearart") else ""
     
     # Extract TV episode information
     title = item.get("title", "Untitled Episode")
@@ -77,8 +89,6 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     # Initialize defaults
     director_names = "N/A"
     hdr_type = "SDR"
-    audio_languages = "N/A"
-    subtitle_languages = "N/A"
     
     # Extract streamdetails - ensure details is a dict
     if not isinstance(details, dict):
@@ -100,159 +110,15 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     hdr_type = format_hdr_label(video_info.get("hdrtype", ""))
     
     # Get enhanced video information using XBMC.GetInfoLabels for real-time data
-    enhanced_video_info = {}
-    player_id = 1  # Default, will be updated if we can get active player
-    try:
-        from kodi_np.rpc import kodi_rpc
-
-        # Get active player ID
-        try:
-            active_players_response = kodi_rpc("Player.GetActivePlayers", {}, server_id=active_server_id)
-            if active_players_response and active_players_response.get("result"):
-                active_players = active_players_response.get("result", [])
-                if active_players:
-                    player_id = active_players[0].get("playerid", 1)
-                    logger.debug(f"Got active player ID: {player_id}")
-        except Exception as e:
-            logger.debug(f"Failed to get active player ID, using default 1: {e}")
-        
-        logger.debug(f"Attempting to get enhanced video info via XBMC.GetInfoLabels")
-        
-        # Get real-time video information
-        infolabels_response = kodi_rpc("XBMC.GetInfoLabels", {
-            "labels": [
-                "VideoPlayer.VideoAspect",
-                "VideoPlayer.VideoAspectLabel", 
-                "VideoPlayer.VideoCodec",
-                "VideoPlayer.Container",
-                "VideoPlayer.AudioCodec",
-                "Player.Process(VideoHeight)",
-                "Player.Process(VideoWidth)",
-                "VideoPlayer.AudioLanguage",
-                "VideoPlayer.SubtitlesLanguage",
-                "VideoPlayer.Year"
-            ]
-        }, server_id=active_server_id)
-        
-        # Try to get available audio streams using Player.GetProperties
-        try:
-            audio_streams_response = kodi_rpc("Player.GetProperties", {
-                "playerid": player_id,
-                "properties": ["audiostreams"]
-            }, server_id=active_server_id)
-            logger.debug(f"Player.GetProperties audiostreams response: {audio_streams_response}")
-            
-            if audio_streams_response and audio_streams_response.get("result"):
-                audio_streams = audio_streams_response.get("result", {}).get("audiostreams", [])
-                logger.debug(f"Available audio streams: {audio_streams}")
-                
-                # Convert audio streams to our format
-                if audio_streams:
-                    audio_info = []
-                    for stream in audio_streams:
-                        if isinstance(stream, dict) and stream.get("language"):
-                            audio_info.append({
-                                "language": stream.get("language", ""),
-                                "name": stream.get("name", ""),
-                                "index": stream.get("index", 0),
-                                "codec": stream.get("codec", ""),
-                                "channels": stream.get("channels", 0)
-                            })
-                    logger.debug(f"Converted audio_info from Player.GetProperties: {audio_info}")
-        except Exception as e:
-            logger.debug(f"Failed to get audio streams: {e}")
-        
-        # Try to get available subtitle streams using Player.GetProperties
-        try:
-            subtitle_streams_response = kodi_rpc("Player.GetProperties", {
-                "playerid": player_id,
-                "properties": ["subtitles"]
-            }, server_id=active_server_id)
-            logger.debug(f"Player.GetProperties subtitles response: {subtitle_streams_response}")
-            
-            if subtitle_streams_response and subtitle_streams_response.get("result"):
-                subtitle_streams = subtitle_streams_response.get("result", {}).get("subtitles", [])
-                logger.debug(f"Available subtitle streams: {subtitle_streams}")
-                
-                # Convert subtitle streams to our format
-                if subtitle_streams:
-                    subtitle_info = []
-                    for stream in subtitle_streams:
-                        if isinstance(stream, dict) and stream.get("language"):
-                            subtitle_info.append({
-                                "language": stream.get("language", ""),
-                                "name": stream.get("name", ""),
-                                "index": stream.get("index", 0)
-                            })
-                    logger.debug(f"Converted subtitle_info: {subtitle_info}")
-        except Exception as e:
-            logger.debug(f"Failed to get subtitle streams: {e}")
-        
-        logger.debug(f"XBMC.GetInfoLabels response: {infolabels_response}")
-        
-        if infolabels_response and infolabels_response.get("result"):
-            enhanced_video_info = infolabels_response.get("result", {})
-            logger.debug(f"Enhanced video info extracted: {enhanced_video_info}")
-        else:
-            logger.debug(f"No result in XBMC.GetInfoLabels response")
-    except Exception as e:
-        logger.debug(f"Failed to get enhanced video info: {e}")
-        import traceback
-        logger.debug(f"Traceback: {traceback.format_exc()}")
-        enhanced_video_info = {}
-    
-    # Debug audio and subtitle info
-    logger.debug(f"Episode audio_info: {audio_info}")
-    logger.debug(f"Episode subtitle_info: {subtitle_info}")
-    
-    # Get current playing languages from InfoLabels
-    audio_language_infolabel = enhanced_video_info.get("VideoPlayer.AudioLanguage", "")
-    subtitle_language_infolabel = enhanced_video_info.get("VideoPlayer.SubtitlesLanguage", "")
-    
-    # Language code normalization mapping
-    language_normalization = {
-        'GER': 'DEU',  # German: ger -> deu
-        'ENG': 'ENG',  # English: eng -> eng
-        'FRE': 'FRA',  # French: fre -> fra
-        'SPA': 'SPA',  # Spanish: spa -> spa
-        'ITA': 'ITA',  # Italian: ita -> ita
-        'POR': 'POR',  # Portuguese: por -> por
-        'RUS': 'RUS',  # Russian: rus -> rus
-        'JPN': 'JPN',  # Japanese: jpn -> jpn
-        'KOR': 'KOR',  # Korean: kor -> kor
-        'CHI': 'CHI',  # Chinese: chi -> chi
-    }
-    
-    # Get all available languages from streamdetails and normalize them
-    all_audio_languages = sorted(set(
-        language_normalization.get(a.get("language", "")[:3].upper(), a.get("language", "")[:3].upper()) 
-        for a in audio_info if a.get("language")
-    ))
-    all_subtitle_languages = sorted(set(
-        language_normalization.get(s.get("language", "")[:3].upper(), s.get("language", "")[:3].upper()) 
-        for s in subtitle_info if s.get("language")
-    ))
-    
-    # Current playing languages (for default display) - normalize immediately
-    current_audio = audio_language_infolabel[:3].upper() if audio_language_infolabel else (all_audio_languages[0] if all_audio_languages else "N/A")
-    current_subtitle = subtitle_language_infolabel[:3].upper() if subtitle_language_infolabel else (all_subtitle_languages[0] if all_subtitle_languages else "N/A")
-    
-    # Normalize current language codes to match streamdetails format
-    current_audio = language_normalization.get(current_audio, current_audio)
-    current_subtitle = language_normalization.get(current_subtitle, current_subtitle)
-    
-    # Ensure current language is included in the all_languages list for expandable functionality
-    if current_audio and current_audio != "N/A" and current_audio not in all_audio_languages:
-        all_audio_languages.append(current_audio)
-        all_audio_languages = sorted(set(all_audio_languages))
-    if current_subtitle and current_subtitle != "N/A" and current_subtitle not in all_subtitle_languages:
-        all_subtitle_languages.append(current_subtitle)
-        all_subtitle_languages = sorted(set(all_subtitle_languages))
-    
-    logger.debug(f"Episode current audio: {current_audio}, all audio: {all_audio_languages}, count: {len(all_audio_languages)}")
-    logger.debug(f"Episode current subtitle: {current_subtitle}, all subtitle: {all_subtitle_languages}, count: {len(all_subtitle_languages)}")
-    logger.debug(f"Audio badge will have expandable class: {len(all_audio_languages) > 1}")
-    logger.debug(f"Subtitle badge will have expandable class: {len(all_subtitle_languages) > 1}")
+    streams = fetch_player_streams(audio_info, subtitle_info, server_id=active_server_id)
+    enhanced_video_info = streams["enhanced_video_info"]
+    audio_info = streams["audio_info"] or audio_info
+    subtitle_info = streams["subtitle_info"] or subtitle_info
+    langs = language_sets(audio_info, subtitle_info, enhanced_video_info)
+    all_audio_languages = langs["all_audio"]
+    all_subtitle_languages = langs["all_subtitles"]
+    current_audio = langs["current_audio"]
+    current_subtitle = langs["current_subtitle"]
     
     # Release year - try InfoLabels first, then fallback to item
     release_year = enhanced_video_info.get("VideoPlayer.Year", "")
@@ -310,83 +176,14 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     genre_badges = genres[:3]
     
     # Format media info - use enhanced video info first, fallback to streamdetails
-    resolution = ""
-    height = enhanced_video_info.get("Player.Process(VideoHeight)", 0)
-    width = enhanced_video_info.get("Player.Process(VideoWidth)", 0)
-    
-    # Convert to int if they're strings, handle comma formatting
-    try:
-        if height:
-            height = int(str(height).replace(',', ''))
-        else:
-            height = 0
-        if width:
-            width = int(str(width).replace(',', ''))
-        else:
-            width = 0
-    except (ValueError, TypeError):
-        height = 0
-        width = 0
-    
-    if not height:
-        height = video_info.get("height", 0)
-    if not width:
-        width = video_info.get("width", 0)
-    
-    # Use width for 4K detection as it's more reliable
-    if width >= 3840 or height >= 2160:
-        resolution = "4K"
-    elif height >= 1080:
-        resolution = "1080p"
-    elif height >= 720:
-        resolution = "720p"
-    
-    # Enhanced codec information using real-time data
-    video_codec = format_video_codec(
-        enhanced_video_info.get("VideoPlayer.VideoCodec", video_info.get("codec", "Unknown"))
-    )
-    audio_codec = format_audio_codec(
-        enhanced_video_info.get(
-            "VideoPlayer.AudioCodec",
-            audio_info[0].get("codec", "Unknown") if audio_info else "Unknown",
-        )
-    )
-    channels = audio_info[0].get("channels", 0) if audio_info else 0
-    
-    # New enhanced video information
-    aspect_ratio = enhanced_video_info.get("VideoPlayer.VideoAspectLabel", "")
-    # If VideoAspectLabel is empty, convert numeric aspect ratio to label
-    if not aspect_ratio and enhanced_video_info.get("VideoPlayer.VideoAspect"):
-        aspect_numeric = float(enhanced_video_info.get("VideoPlayer.VideoAspect", "0"))
-        if aspect_numeric > 0:
-            # Convert numeric aspect ratio to common labels
-            if 1.77 <= aspect_numeric <= 1.78:
-                aspect_ratio = "16:9"
-            elif 2.35 <= aspect_numeric <= 2.40:
-                aspect_ratio = "21:9"
-            elif 1.33 <= aspect_numeric <= 1.37:
-                aspect_ratio = "4:3"
-            elif 1.85 <= aspect_numeric <= 1.90:
-                aspect_ratio = "1.85:1"
-            elif 2.20 <= aspect_numeric <= 2.25:
-                aspect_ratio = "2.20:1"
-            else:
-                aspect_ratio = f"{aspect_numeric:.2f}:1"
-    
-    container_format = enhanced_video_info.get("VideoPlayer.Container", "").upper()
-    # If container is empty, try to extract from file path
-    if not container_format and item.get("file"):
-        file_path = item.get("file", "")
-        if file_path.lower().endswith('.mkv'):
-            container_format = "MKV"
-        elif file_path.lower().endswith('.mp4'):
-            container_format = "MP4"
-        elif file_path.lower().endswith('.avi'):
-            container_format = "AVI"
-        elif file_path.lower().endswith('.m4v'):
-            container_format = "M4V"
-        elif file_path.lower().endswith('.mov'):
-            container_format = "MOV"
+    width, height = video_dimensions(enhanced_video_info, video_info)
+    resolution = resolution_label(width, height)
+    codec_info = codecs_and_channels(enhanced_video_info, video_info, audio_info)
+    video_codec = codec_info["video_codec"]
+    audio_codec = codec_info["audio_codec"]
+    channels = codec_info["channels"]
+    aspect_ratio = aspect_ratio_label(enhanced_video_info)
+    container_format = container_label(enhanced_video_info, item)
     
     # Playback progress
     elapsed = progress_data.get("elapsed", 0)
@@ -421,20 +218,8 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     
 
     # Precomputed HTML fragments for template
-    fanart_slides_html = (
-        "".join(
-            f'<div class="fanart-slide{" active" if i == 0 else ""}" style="background-image: url(\'{fanart}\')"></div>'
-            for i, fanart in enumerate(fanart_variants)
-        )
-        if fanart_variants
-        else ""
-    )
-    pending_items = []
-    art_session_id = session_id
-    if isinstance(details, dict):
-        pending_items = list(details.get("pending_fanarts") or [])
-        art_session_id = details.get("art_session_id") or session_id
-    fanart_pending_json = json.dumps({"session_id": art_session_id, "items": pending_items})
+    fanart_slides_html = build_fanart_slides_html(fanart_variants)
+    fanart_pending_json = build_fanart_pending_json(details, session_id)
     show_poster_html = (
         f"<img class='show-poster' id='soft-show-poster' src='{show_poster_url}' />" if show_poster_url else "<img class='show-poster' id='soft-show-poster' style='display:none' src='' />"
     )

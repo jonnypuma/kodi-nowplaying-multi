@@ -78,10 +78,18 @@ def api_overview():
 
 @bp.route("/api/overview-server/<int:server_id>")
 def api_overview_server(server_id):
-    """Live probe for one Kodi server (used for parallel overview tile updates)."""
+    """Live probe for one Kodi server (used for parallel overview tile updates).
+
+    This only runs when someone opens the overview page or adds a server, not on
+    the background refresh, so a server we have never reached may be probed even
+    while it is in backoff.
+    """
     if server_id not in _c.KODI_SERVERS:
         return jsonify({"success": False, "error": "Server not found"}), 404
-    return jsonify({"success": True, "server": overview_live_status(server_id)})
+    return jsonify({
+        "success": True,
+        "server": overview_live_status(server_id, allow_cold_probe=True),
+    })
 
 
 @bp.route("/api/overview/all", methods=["GET"])

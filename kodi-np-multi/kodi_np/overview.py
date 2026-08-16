@@ -33,7 +33,7 @@ def _format_overview_title(item):
         return title, "movie"
     return title, media_type if media_type != "unknown" else "other"
 
-def get_server_overview_status(server_id):
+def get_server_overview_status(server_id, bypass_backoff=False):
     """Return lightweight playback status for one configured Kodi server."""
     server = _c.KODI_SERVERS.get(server_id)
     if not server:
@@ -64,6 +64,7 @@ def get_server_overview_status(server_id):
             "Player.GetActivePlayers",
             {},
             server_id=server_id,
+            bypass_backoff=bypass_backoff,
         )
         if players_response is None:
             backoff = server_backoff_status(server_id)
@@ -84,11 +85,13 @@ def get_server_overview_status(server_id):
                 "properties": ["title", "album", "artist", "showtitle", "season", "episode"],
             },
             server_id=server_id,
+            bypass_backoff=bypass_backoff,
         )
         props_response = kodi_rpc(
             "Player.GetProperties",
             {"playerid": player_id, "properties": ["speed"]},
             server_id=server_id,
+            bypass_backoff=bypass_backoff,
         )
 
         item = {}
@@ -153,12 +156,32 @@ def overview_fast_snapshot(server_id):
     }
 
 
-def overview_live_status(server_id):
-    """Live Kodi probe merged with warm cache fields for one overview tile."""
+def server_is_cold(server_id) -> bool:
+    """True when we hold no cache for this server, i.e. never reached it yet.
+
+    A cold server has nothing to report but a guess, so a backoff started by one
+    failed attempt would otherwise be shown as a confident "offline".
+    """
+    from kodi_np.cache import overview_from_cache
+
+    if overview_from_cache(server_id) is not None:
+        return False
+    return not server_backoff_status(server_id)["auth_failed"]
+
+
+def overview_live_status(server_id, allow_cold_probe=False):
+    """Live Kodi probe merged with warm cache fields for one overview tile.
+
+    ``allow_cold_probe`` lets an explicit page load look past the backoff for a
+    server that has never answered. Without it a host that was still booting
+    when the poller first tried stays "offline" until the backoff expires, even
+    though it is reachable now.
+    """
     from kodi_np.cache import overview_from_cache
 
     remaining = int(server_backoff_remaining(server_id))
-    if remaining > 0:
+    cold_probe = remaining > 0 and allow_cold_probe and server_is_cold(server_id)
+    if remaining > 0 and not cold_probe:
         cached = overview_from_cache(server_id)
         if cached is not None:
             out = dict(cached)
@@ -183,7 +206,7 @@ def overview_live_status(server_id):
             out["error"] = "Connection failed"
         return out
 
-    live = get_server_overview_status(server_id)
+    live = get_server_overview_status(server_id, bypass_backoff=cold_probe)
     live["backoff_remaining"] = int(server_backoff_remaining(server_id))
     cached = overview_from_cache(server_id)
     if cached is not None:

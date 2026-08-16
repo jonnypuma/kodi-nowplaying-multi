@@ -11,6 +11,7 @@ APP_DIR = ROOT / "kodi-np-multi"
 _CONFIG_MIRROR = {
     "APP_VERSION",
     "BASIC_AUTH",
+    "KODI_HOST_ALLOWLIST",
     "CACHE_MAX_ART_FILES",
     "CACHE_MAX_ART_MB",
     "ART_TMP_DIR",
@@ -19,6 +20,7 @@ _CONFIG_MIRROR = {
     "POLL_ERROR_IDLE_CONFIRMATIONS",
     "SERVER_FAIL_BACKOFF_AFTER",
     "SERVER_FAIL_BACKOFF_SECONDS",
+    "SERVER_FAIL_BACKOFF_INITIAL_SECONDS",
     "CACHE_POLLER_ENABLED",
     "CACHE_POLLER_INTERVAL",
     "PREFERENCES_DIR",
@@ -124,9 +126,13 @@ def client(app_module):
 
 @pytest.fixture(autouse=True)
 def _reset_runtime_state(app_module):
+    from kodi_np.preferences import invalidate_preferences_cache
+
     app_module.server_backoff.clear()
+    invalidate_preferences_cache()
     yield
     app_module.server_backoff.clear()
+    invalidate_preferences_cache()
 
 
 @pytest.fixture
@@ -139,6 +145,8 @@ def patch_into(monkeypatch):
             "kodi_np.nowplaying.kodi_rpc",
             "kodi_np.cache.kodi_rpc",
             "kodi_np.art.kodi_rpc",
+            "kodi_np.art_paths.kodi_rpc",
+            "kodi_np.art_music.kodi_rpc",
             "kodi_np.overview.kodi_rpc",
             "kodi_np.routes.playback.kodi_rpc",
             "kodi_np.routes.servers_prefs.kodi_rpc",
@@ -148,6 +156,7 @@ def patch_into(monkeypatch):
             "kodi_np.nowplaying.get_active_server",
             "kodi_np.cache.get_active_server",
             "kodi_np.art.get_active_server",
+            "kodi_np.art_download.get_active_server",
             "kodi_np.rpc.get_active_server",
             "kodi_np.routes.playback.get_active_server",
         ],

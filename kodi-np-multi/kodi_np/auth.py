@@ -71,6 +71,20 @@ def _note_login_success(ip: str) -> None:
         _login_attempts.pop(ip, None)
 
 
+def safe_next_url(raw: str) -> str:
+    """Clamp a ``next`` parameter to a same-origin relative path.
+
+    ``//evil.example`` and ``/\\evil.example`` are protocol-relative and would
+    send the browser off-site after a successful sign-in.
+    """
+    candidate = (raw or "").strip()
+    if not candidate.startswith("/"):
+        return "/"
+    if candidate[:2] in ("//", "/\\"):
+        return "/"
+    return candidate
+
+
 def _safe_compare(left: str, right: str) -> bool:
     left_b = (left or "").encode("utf-8")
     right_b = (right or "").encode("utf-8")
@@ -105,7 +119,7 @@ def require_login():
 def login():
     if not auth_enabled():
         return redirect(url_for("pages.index"))
-    next_url = request.args.get("next") or request.form.get("next") or "/"
+    next_url = safe_next_url(request.args.get("next") or request.form.get("next") or "/")
     error = None
     ip = _client_ip()
     if request.method == "POST":
@@ -120,7 +134,7 @@ def login():
                 _note_login_success(ip)
                 session["web_authenticated"] = True
                 session.permanent = True
-                return redirect(next_url if next_url.startswith("/") else "/")
+                return redirect(next_url)
             _note_login_failure(ip)
             error = "Those credentials were not accepted."
     return render_template("login.html", error=error, next=next_url)

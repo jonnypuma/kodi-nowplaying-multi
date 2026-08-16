@@ -21,7 +21,7 @@ if _tz:
 
 configure_logging()
 
-APP_VERSION = "3.1.2"
+APP_VERSION = "3.4.1"
 APP_DIR = Path(__file__).resolve().parent.parent
 PREFERENCES_DIR = Path(os.getenv("PREFERENCES_DIR", "/app/preferences"))
 PREFERENCES_FILE = PREFERENCES_DIR / "preferences.json"
@@ -52,6 +52,13 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "0") == "1"
 BASIC_AUTH = os.getenv("BASIC_AUTH", "").strip()
+# Optional comma-separated hostnames that custom Kodi servers may point at.
+# Empty (default) keeps any reachable host allowed.
+KODI_HOST_ALLOWLIST = tuple(
+    entry.strip().lower()
+    for entry in os.getenv("KODI_HOST_ALLOWLIST", "").split(",")
+    if entry.strip()
+)
 CACHE_MAX_ART_FILES = int(os.getenv("CACHE_MAX_ART_FILES", "500"))
 CACHE_MAX_ART_MB = int(os.getenv("CACHE_MAX_ART_MB", "1024"))
 
@@ -80,6 +87,11 @@ THUMB_ART_PRIORITY = (
 CACHE_PROBE_FAIL_CLEAR_AFTER = int(os.getenv("CACHE_PROBE_FAIL_CLEAR_AFTER", "3"))
 SERVER_FAIL_BACKOFF_AFTER = int(os.getenv("SERVER_FAIL_BACKOFF_AFTER", "3"))
 SERVER_FAIL_BACKOFF_SECONDS = int(os.getenv("SERVER_FAIL_BACKOFF_SECONDS", "300"))
+# The first pause after a host stops answering. It doubles on each further
+# failed round up to SERVER_FAIL_BACKOFF_SECONDS. A host that is merely slow to
+# boot is retried within seconds, while one that is genuinely gone still ends
+# up polled at long, quiet intervals.
+SERVER_FAIL_BACKOFF_INITIAL_SECONDS = int(os.getenv("SERVER_FAIL_BACKOFF_INITIAL_SECONDS", "15"))
 SERVER_AUTH_BACKOFF_SECONDS = int(os.getenv("SERVER_AUTH_BACKOFF_SECONDS", "900"))
 KODI_RPC_TIMEOUT = float(os.getenv("KODI_RPC_TIMEOUT", "5"))
 KODI_CONNECT_TIMEOUT = float(os.getenv("KODI_CONNECT_TIMEOUT", "2"))

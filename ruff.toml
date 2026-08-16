@@ -1,0 +1,24 @@
+line-length = 120
+target-version = "py312"
+
+exclude = [
+    "kodi-np-multi/tmp",
+    "kodi-np-multi/preferences",
+]
+
+[lint]
+# Ruff defaults (E4/E7/E9 + pyflakes). The value here is catching unused
+# imports, dead locals, and undefined names — not style enforcement.
+select = ["E4", "E7", "E9", "F"]
+
+[lint.per-file-ignores]
+# These modules exist only to re-export the kodi_np surface under the older
+# flat import paths that the test suite and entrypoint still use.
+"kodi-np-multi/kodi-nowplaying.py" = ["F401", "F403", "F405"]
+"kodi-np-multi/parser.py" = ["F401", "F403", "F405"]
+"kodi-np-multi/movie_nowplaying.py" = ["F401", "F403", "F405"]
+"kodi-np-multi/music_nowplaying.py" = ["F401", "F403", "F405"]
+"kodi-np-multi/episode_nowplaying.py" = ["F401", "F403", "F405"]
+"kodi-np-multi/logging_config.py" = ["F401", "F403", "F405"]
+# Tests extend sys.path to reach the app package before importing from it.
+"tests/*" = ["E402"]

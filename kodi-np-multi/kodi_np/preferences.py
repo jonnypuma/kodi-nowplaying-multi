@@ -10,18 +10,34 @@ from kodi_np import config as _c
 
 logger = logging.getLogger("kodi.nowplaying")
 
+# load_preferences() sits on the artwork and polling hot paths, where it was
+# reopening and reparsing preferences.json on every call. Cache the parsed dict
+# and reuse it while the file's identity, size, and mtime are unchanged.
+_prefs_cache_key = None
+_prefs_cache_value: dict = {}
+
+
+def _preferences_stat_key():
+    """Cheap fingerprint of preferences.json, or None when it is missing."""
+    try:
+        stat = _c.PREFERENCES_FILE.stat()
+    except OSError:
+        return None
+    return (str(_c.PREFERENCES_FILE), stat.st_mtime_ns, stat.st_size)
+
+
+def invalidate_preferences_cache():
+    """Force the next load_preferences() to re-read from disk."""
+    global _prefs_cache_key
+    _prefs_cache_key = None
+
 
 def ensure_preferences_dir():
     """Ensure the preferences directory exists"""
     try:
         _c.PREFERENCES_DIR.mkdir(parents=True, exist_ok=True)
-        logger.debug(
-            f"Preferences directory ensured: {_c.PREFERENCES_DIR}, exists: {_c.PREFERENCES_DIR.exists()}"
-        )
     except Exception as e:
-        logger.error(f"Failed to create preferences directory: {e}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
+        logger.error("Failed to create preferences directory: %s", e, exc_info=True)
 
 
 def _read_preferences_unlocked():
@@ -53,6 +69,7 @@ def _write_preferences_unlocked(prefs):
             f.flush()
             os.fsync(f.fileno())
         temp_file.replace(_c.PREFERENCES_FILE)
+        invalidate_preferences_cache()
         return True
     except OSError as e:
         logger.error(f"Failed to save preferences: {e}")
@@ -65,14 +82,21 @@ def _write_preferences_unlocked(prefs):
 
 
 def load_preferences():
-    """Load preferences from JSON file."""
+    """Load preferences from JSON file, reparsing only when it changed on disk."""
+    global _prefs_cache_key, _prefs_cache_value
     ensure_preferences_dir()
     with _c.PREFERENCES_LOCK:
+        key = _preferences_stat_key()
+        if key is not None and key == _prefs_cache_key:
+            return dict(_prefs_cache_value)
+
         prefs = _read_preferences_unlocked()
+        _prefs_cache_key = key
+        _prefs_cache_value = prefs
         if prefs:
-            logger.debug(f"Loaded preference keys from file: {list(prefs.keys())}")
+            logger.debug("Loaded preference keys from file: %s", list(prefs.keys()))
         else:
-            logger.debug(f"Preferences file empty or missing: {_c.PREFERENCES_FILE}")
+            logger.debug("Preferences file empty or missing: %s", _c.PREFERENCES_FILE)
         return dict(prefs)
 
 

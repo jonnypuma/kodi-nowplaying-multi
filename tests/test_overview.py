@@ -112,7 +112,7 @@ def test_api_overview_server_live(client, app_module, patch_into):
         1: {"id": 1, "host": "http://10.0.0.1:8080", "ip": "10.0.0.1", "auth": None, "username": "", "password": ""},
     }
 
-    def fake_live(server_id):
+    def fake_live(server_id, allow_cold_probe=False):
         return {
             "id": server_id,
             "host": "http://10.0.0.1:8080",
@@ -209,7 +209,7 @@ def test_overview_live_status_clears_stale_playing_cache(app_module, patch_into)
     patch_into(
         app_module,
         "get_server_overview_status",
-        lambda server_id: {
+        lambda server_id, bypass_backoff=False: {
             "id": server_id,
             "connected": True,
             "playing": False,
@@ -248,7 +248,7 @@ def test_overview_live_status_skips_rpc_during_backoff(app_module, patch_into):
     app_module.note_server_rpc_failure(1, "Connection refused")
     rpc_calls = {"n": 0}
 
-    def boom(server_id):
+    def boom(server_id, bypass_backoff=False):
         rpc_calls["n"] += 1
         raise AssertionError("live overview must not RPC during backoff")
 

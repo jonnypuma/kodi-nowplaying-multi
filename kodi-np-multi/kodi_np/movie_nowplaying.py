@@ -2,7 +2,6 @@
 Movie-specific HTML generation for Kodi Now Playing application.
 Handles movie display with discart spinning animation and movie-specific layout.
 """
-import json
 import logging
 
 from flask import render_template
@@ -12,6 +11,8 @@ from kodi_np.media_info import (
     aspect_ratio_label,
     codecs_and_channels,
     container_label,
+    fanart_pending_json as build_fanart_pending_json,
+    fanart_slides_html as build_fanart_slides_html,
     fanart_variant_urls,
     fetch_player_streams,
     format_playback_time,
@@ -44,13 +45,11 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     poster_url = f"/media/{downloaded_art.get('poster')}" if downloaded_art.get("poster") else ""
     
     fanart_variants = fanart_variant_urls(downloaded_art)
-    fanart_url = fanart_variants[0] if fanart_variants else ""
     logger.debug("Movie fanart variants found: %s", len(fanart_variants))
     
     discart_url = f"/media/{downloaded_art.get('discart')}" if downloaded_art.get("discart") else ""
     banner_url = f"/media/{downloaded_art.get('banner')}" if downloaded_art.get("banner") else ""
     clearlogo_url = f"/media/{downloaded_art.get('clearlogo')}" if downloaded_art.get("clearlogo") else ""
-    clearart_url = f"/media/{downloaded_art.get('clearart')}" if downloaded_art.get("clearart") else ""
     
     # Extract movie information
     title = item.get("title", "Untitled")
@@ -69,8 +68,6 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     # Initialize defaults
     director_names = "N/A"
     hdr_type = "SDR"
-    audio_languages = "N/A"
-    subtitle_languages = "N/A"
     
     # Extract streamdetails - ensure details is a dict
     if not isinstance(details, dict):
@@ -176,20 +173,8 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     genre_badges = [html_escape(genre) for genre in genre_badges]
     
     # Precomputed HTML fragments for template
-    fanart_slides_html = (
-        "".join(
-            f'<div class="fanart-slide{" active" if i == 0 else ""}" style="background-image: url(\'{fanart}\')"></div>'
-            for i, fanart in enumerate(fanart_variants)
-        )
-        if fanart_variants
-        else ""
-    )
-    pending_items = []
-    art_session_id = session_id
-    if isinstance(details, dict):
-        pending_items = list(details.get("pending_fanarts") or [])
-        art_session_id = details.get("art_session_id") or session_id
-    fanart_pending_json = json.dumps({"session_id": art_session_id, "items": pending_items})
+    fanart_slides_html = build_fanart_slides_html(fanart_variants)
+    fanart_pending_json = build_fanart_pending_json(details, session_id)
     discart_html = (
         f"<div class='discart-wrapper'><img class='discart' src='{discart_url}' /></div>"
         if discart_url

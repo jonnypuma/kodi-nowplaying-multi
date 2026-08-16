@@ -1,5 +1,8 @@
 """Unit tests for artist-folder artwork path remapping helpers."""
 from kodi_np import art as art_mod
+# These helpers live in art_music; kodi_np.art only re-exports them, so patching
+# has to target the defining module or the function will not see it.
+from kodi_np import art_music as art_music_mod
 
 
 def test_art_path_basename_strips_image_protocol_and_slash():
@@ -48,9 +51,9 @@ def test_prefer_music_artist_folder_art_sets_clearlogo(monkeypatch):
             return f"{artist_dir}/clearlogo.png"
         return ""
 
-    monkeypatch.setattr(art_mod, "_probe_artist_folder_art", fake_probe)
+    monkeypatch.setattr(art_music_mod, "_probe_artist_folder_art", fake_probe)
     song = "nfs://nas/share/Music/AURORA/Album/track.flac"
-    art_mod.prefer_music_artist_folder_art(song, art_map, buckets=buckets, key_scope={})
+    art_music_mod.prefer_music_artist_folder_art(song, art_map, buckets=buckets, key_scope={})
     assert art_map["clearlogo"] == "nfs://nas/share/Music/AURORA/clearlogo.png"
     assert buckets["artist"]["clearlogo"] == art_map["clearlogo"]
 
@@ -58,10 +61,10 @@ def test_prefer_music_artist_folder_art_sets_clearlogo(monkeypatch):
 def test_prefer_music_artist_folder_art_accepts_clearart_as_logo(monkeypatch):
     art_map = {}
     monkeypatch.setattr(
-        art_mod,
+        art_music_mod,
         "_probe_artist_folder_art",
         lambda artist_dir, stems: f"{artist_dir}/clearart.png" if "clearart" in stems else "",
     )
     song = "nfs://nas/share/Music/AURORA/Album/track.flac"
-    art_mod.prefer_music_artist_folder_art(song, art_map, buckets={}, key_scope={})
+    art_music_mod.prefer_music_artist_folder_art(song, art_map, buckets={}, key_scope={})
     assert art_map["clearlogo"] == "nfs://nas/share/Music/AURORA/clearart.png"

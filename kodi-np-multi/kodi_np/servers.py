@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import re
+import urllib.parse
 
 from flask import has_request_context, session
 
@@ -122,7 +123,16 @@ def validate_server_host(host: str):
     host = (host or "").strip()
     if not _HOST_RE.match(host):
         return None, "Host must start with http:// or https://"
-    return host.rstrip("/"), None
+    host = host.rstrip("/")
+    allowlist = getattr(_c, "KODI_HOST_ALLOWLIST", ())
+    if allowlist:
+        try:
+            hostname = (urllib.parse.urlsplit(host).hostname or "").lower()
+        except ValueError:
+            hostname = ""
+        if hostname not in allowlist:
+            return None, "Host is not permitted by KODI_HOST_ALLOWLIST"
+    return host, None
 
 
 def next_custom_server_id():

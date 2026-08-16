@@ -9,6 +9,7 @@ COMPAT surfaces re-exported for tests (app_module.*):
   cleanup_old_artwork_files, make_playback_fingerprint, overview_from_cache,
   probe_playback_fingerprint, build_nowplaying_soft_update, parse_kodi_servers,
   server_display_name, get_active_server, get_server_overview_status,
+  validate_server_host, is_kodi_host_url, collect_extrafanart_variants,
   validate_preferences_update, prune_load_jobs, load_jobs, load_lock,
   playback_poll_state, server_backoff, _poll_state_for, POLL_IDLE_CONFIRMATIONS,
   SERVER_FAIL_BACKOFF_*, note_server_rpc_*, server_backoff_remaining,
@@ -25,8 +26,10 @@ from kodi_np.art import (
     apply_share_reuse,
     classify_art_buckets,
     cleanup_old_artwork_files,
+    collect_extrafanart_variants,
     download_fanart_variant,
     empty_share,
+    is_kodi_host_url,
     ensure_share_file,
     is_artwork_filename,
     primary_artist_id,
@@ -67,7 +70,12 @@ from kodi_np.rpc import (
     server_backoff_remaining,
     server_backoff_status,
 )
-from kodi_np.servers import get_active_server, parse_kodi_servers, server_display_name
+from kodi_np.servers import (
+    get_active_server,
+    parse_kodi_servers,
+    server_display_name,
+    validate_server_host,
+)
 from kodi_np.util import prune_load_jobs
 
 # Same object identity as config — mutations and .clear() work across modules

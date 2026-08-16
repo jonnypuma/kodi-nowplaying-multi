@@ -1,0 +1,55 @@
+        function getOrCreateButton() {
+          // Get time-display element
+          const timeDisplay = document.getElementById('time-display');
+          if (!timeDisplay) {
+            console.log('[ERROR] time-display element not found, cannot recreate button');
+            return null;
+          }
+          
+          // Try to get cached button first
+          if (cachedButton && document.contains(cachedButton)) {
+            return cachedButton;
+          }
+          
+          // Try to find existing button
+          let button = document.getElementById('playback-button');
+          if (button) {
+            cachedButton = button;
+            return button;
+          }
+          
+          // Button not found, try to recreate it
+          console.log('[DEBUG] Button not found, attempting to recreate...');
+          if (timeDisplay) {
+            // Create new button element
+            button = document.createElement('img');
+            button.id = 'playback-button';
+            button.src = '/play-button.png';
+            button.alt = 'Play';
+            button.style.cssText = 'width: 20px; height: 20px; opacity: 1; transition: opacity 0.5s ease; display: inline-block; vertical-align: middle; margin-right: 4px;';
+            
+            // Add error handling for failed image loads
+            button.onerror = function() {
+              console.log('[DEBUG] Button image failed to load, trying to reload...');
+              this.style.opacity = '0.5';
+              // Retry loading the image after a short delay
+              setTimeout(() => {
+                this.src = this.src + '?retry=' + Date.now();
+              }, 1000);
+            };
+            
+            button.onload = function() {
+              console.log('[DEBUG] Button image loaded successfully');
+              this.style.opacity = '1';
+            };
+            
+            // Insert at the beginning of time-display
+            timeDisplay.insertBefore(button, timeDisplay.firstChild);
+            cachedButton = button;
+            console.log('[DEBUG] Button recreated successfully');
+            return button;
+          } else {
+            console.log('[ERROR] time-display element not found, cannot recreate button');
+            return null;
+          }
+        }

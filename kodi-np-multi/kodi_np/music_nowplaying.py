@@ -7,8 +7,14 @@ import logging
 
 from flask import render_template
 
-from kodi_np.codecs import format_audio_codec, format_hdr_label
-from kodi_np.media_info import format_playback_time, html_escape, up_next_html as build_up_next_html
+from kodi_np.codecs import format_audio_codec
+from kodi_np.media_info import (
+    fanart_pending_json as build_fanart_pending_json,
+    fanart_slides_html as build_fanart_slides_html,
+    format_playback_time,
+    html_escape,
+    up_next_html as build_up_next_html,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +153,7 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
             banner_url = f"/media/{downloaded_art.get('banner')}"
             logger.debug(f"Using banner: {banner_url}")
         else:
-            logger.debug(f"Skipping banner as it appears to be a fanart image")
+            logger.debug("Skipping banner as it appears to be a fanart image")
     clearlogo_url = f"/media/{downloaded_art.get('clearlogo')}" if downloaded_art.get("clearlogo") else ""
     # Logo fallback: some libraries only have clearart.png in the artist folder
     if not clearlogo_url and downloaded_art.get("clearart"):
@@ -157,20 +163,14 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     if downloaded_art.get("clearart"):
         clearart_filename = downloaded_art.get("clearart", "")
         logger.debug(f"Clearart filename: {clearart_filename}")
-        logger.debug(f"Skipping clearart for music to prevent fanart display underneath album cover")
+        logger.debug("Skipping clearart for music to prevent fanart display underneath album cover")
     
     # Extract music information
     title = item.get("title", "Untitled Track")
     album = item.get("album", "")
     artist = item.get("artist", [])
     artist_names = ", ".join(artist) if artist else "Unknown Artist"
-    plot = item.get("plot", item.get("description", ""))
-    
-    # Additional details already extracted above
-    
-    # Get artist biography (use description field from official schema)
-    artist_bio = artist_details.get("description", "") if isinstance(artist_details, dict) else ""
-    
+
     # Get additional album info (fallback to item data if API failed)
     album_year = album_details.get("year", item.get("year", "")) if isinstance(album_details, dict) else item.get("year", "")
     album_rating = album_details.get("rating", item.get("rating", 0)) if isinstance(album_details, dict) else item.get("rating", 0)
@@ -178,19 +178,13 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     # Get additional song info - ensure details is a dict
     if not isinstance(details, dict):
         details = {}
-    song_comment = details.get("comment", "")
     song_lyrics = details.get("lyrics", "")
     song_disc = details.get("disc", 0)
-    song_votes = details.get("votes", 0)
-    song_user_rating = details.get("userrating", 0)
-    song_bpm = details.get("bpm", 0)
     song_samplerate = details.get("samplerate", 0)
     song_bitrate = details.get("bitrate", 0)
     song_channels = details.get("channels", 0)
     song_track = details.get("track", 0)
     record_label = album_details.get("albumlabel", "") if isinstance(album_details, dict) else ""
-    song_release_date = details.get("releasedate", "")
-    song_original_date = details.get("originaldate", "")
     
     # Get album details for totaldiscs
     album_details = details.get("album", {}) if isinstance(details, dict) else {}
@@ -207,16 +201,8 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     if not isinstance(artist_details, dict):
         artist_details = {}
     artist_born = artist_details.get("born", "")
-    artist_formed = artist_details.get("formed", "")
-    artist_years_active = artist_details.get("yearsactive", "")
     artist_genre = artist_details.get("genre", [])
-    artist_mood = artist_details.get("mood", [])
     artist_style = artist_details.get("style", [])
-    artist_gender = artist_details.get("gender", "")
-    artist_instrument = artist_details.get("instrument", [])
-    artist_type = artist_details.get("type", "")
-    artist_sortname = artist_details.get("sortname", "")
-    artist_disambiguation = artist_details.get("disambiguation", "")
     
     # If API calls failed, use basic item data
     if not isinstance(album_details, dict) and album:
@@ -236,10 +222,6 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     rating = round(details.get("rating", 0.0), 1)
     rating_html = f"<strong>⭐ {rating}</strong>" if rating > 0 else ""
     
-    # Initialize defaults
-    hdr_type = "SDR"
-    audio_languages = "N/A"
-    subtitle_languages = "N/A"
     
     # Extract streamdetails - ensure details is a dict
     if not isinstance(details, dict):
@@ -247,19 +229,14 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     streamdetails = details.get("streamdetails", {})
     if not isinstance(streamdetails, dict):
         streamdetails = {}
-    video_info = streamdetails.get("video", [{}])[0] if isinstance(streamdetails.get("video"), list) and len(streamdetails.get("video", [])) > 0 else {}
     audio_info = streamdetails.get("audio", []) if isinstance(streamdetails.get("audio"), list) else []
-    subtitle_info = streamdetails.get("subtitle", []) if isinstance(streamdetails.get("subtitle"), list) else []
-    
-    # HDR type (usually not applicable for music, but keeping for consistency)
-    hdr_type = format_hdr_label(video_info.get("hdrtype", ""))
     
     # Get enhanced audio information using XBMC.GetInfoLabels for real-time data
     enhanced_audio_info = {}
     try:
         from kodi_np.rpc import kodi_rpc
 
-        logger.debug(f"Attempting to get enhanced audio info via XBMC.GetInfoLabels")
+        logger.debug("Attempting to get enhanced audio info via XBMC.GetInfoLabels")
         
         # Get real-time audio information
         infolabels_response = kodi_rpc("XBMC.GetInfoLabels", {
@@ -278,22 +255,12 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
             enhanced_audio_info = infolabels_response.get("result", {})
             logger.debug(f"Enhanced audio info extracted: {enhanced_audio_info}")
         else:
-            logger.debug(f"No result in XBMC.GetInfoLabels response")
+            logger.debug("No result in XBMC.GetInfoLabels response")
     except Exception as e:
         logger.debug(f"Failed to get enhanced audio info: {e}")
         import traceback
         logger.debug(f"Traceback: {traceback.format_exc()}")
         enhanced_audio_info = {}
-    
-    # Audio languages
-    audio_languages = ", ".join(sorted(set(
-        a.get("language", "")[:3].upper() for a in audio_info if a.get("language")
-    ))) or "N/A"
-    
-    # Subtitle languages
-    subtitle_languages = ", ".join(sorted(set(
-        s.get("language", "")[:3].upper() for s in subtitle_info if s.get("language")
-    ))) or "N/A"
     
     # Genre and formatting - ensure details is a dict
     if not isinstance(details, dict):
@@ -304,12 +271,8 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     genres = [g.capitalize() for g in genre_list]
     genre_badges = genres[:3]
     
-    # Format media info
-    resolution = "Audio"  # Music doesn't have video resolution
-    
     # Enhanced audio codec information using real-time data
     audio_codec = format_audio_codec(enhanced_audio_info.get("VideoPlayer.AudioCodec", audio_info[0].get("codec", "Unknown") if audio_info else "Unknown"))
-    channels = audio_info[0].get("channels", 0) if audio_info else 0
     
     # Get audio bits per sample from enhanced audio info
     audio_bits_per_sample = enhanced_audio_info.get("MusicPlayer.BitsPerSample", 0)
@@ -408,20 +371,10 @@ def generate_html(item, session_id, downloaded_art, progress_data, details):
     fanart_debug_html = (
         f"<!-- DEBUG: fanart_variants length: {len(fanart_variants)}, content: {fanart_variants} -->"
     )
-    fanart_slides_html = (
-        "".join(
-            f'<div class="fanart-slide{" active" if i == 0 else ""}" style="background-image: url(\'{fanart}\')"></div>'
-            for i, fanart in enumerate(fanart_variants)
-        )
-        if fanart_variants
-        else "<!-- No fanart variants available -->"
+    fanart_slides_html = build_fanart_slides_html(
+        fanart_variants, empty="<!-- No fanart variants available -->"
     )
-    pending_items = []
-    art_session_id = session_id
-    if isinstance(details, dict):
-        pending_items = list(details.get("pending_fanarts") or [])
-        art_session_id = details.get("art_session_id") or session_id
-    fanart_pending_json = json.dumps({"session_id": art_session_id, "items": pending_items})
+    fanart_pending_json = build_fanart_pending_json(details, session_id)
     poster_container_extra_class = " flip-enabled" if back_cover_url else ""
     discart_html = (
         f"<div class='discart-wrapper'><img class='discart' src='{discart_display_url}' /></div>"

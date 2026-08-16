@@ -10,13 +10,9 @@ import uuid
 
 from kodi_np import config as _c
 from kodi_np.art import (
-    cached_art_filenames,
-    cleanup_old_artwork_files,
-    empty_share,
     is_artwork_filename,
     pick_fanart_filename,
     pick_thumb_art,
-    pick_thumb_filename,
 )
 from kodi_np.rpc import (
     kodi_rpc,

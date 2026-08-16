@@ -52,7 +52,6 @@ def test_api_music_meta_empty_request(client):
 
 
 def test_api_music_meta_fills_artist(client, monkeypatch):
-    from kodi_np import music_meta as music_meta_mod
     from kodi_np.routes import extras as extras_mod
 
     monkeypatch.setattr(

@@ -1,0 +1,23 @@
+        function startPlaybackPolling() {
+          if (playbackPollTimer) clearInterval(playbackPollTimer);
+          playbackPollTimer = setInterval(checkPlaybackChange, PLAYBACK_POLL_MS);
+        }
+
+        function toggleMarquee() {
+          const marquee = document.querySelector('.marquee');
+          const toggle = document.querySelector('.marquee-toggle');
+          const content = document.querySelector('.content');
+          
+          marquee.classList.toggle('hidden');
+          toggle.classList.toggle('hidden');
+          
+          if (marquee.classList.contains('hidden')) {
+            content.classList.add('no-marquee');
+            toggle.innerHTML = '<div class="arrow up"></div>';
+            toggle.title = 'Show Marquee';
+          } else {
+            content.classList.remove('no-marquee');
+            toggle.innerHTML = '<div class="arrow"></div>';
+            toggle.title = 'Hide Marquee';
+          }
+        }

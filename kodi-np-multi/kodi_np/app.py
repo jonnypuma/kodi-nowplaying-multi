@@ -5,6 +5,7 @@ import logging
 
 from kodi_np import config as _c
 from kodi_np.cache import start_cache_poller  # noqa: F401 — re-exported by entry
+from kodi_np.errors import register_error_handlers
 from kodi_np.routes import register_blueprints
 from kodi_np.servers import init_servers
 
@@ -19,6 +20,7 @@ def create_app():
     init_servers()
     if not _blueprints_registered:
         register_blueprints(_c.app)
+        register_error_handlers(_c.app)
         _blueprints_registered = True
     start_cache_poller()
     return _c.app
