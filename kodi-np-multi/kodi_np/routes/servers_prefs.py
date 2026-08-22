@@ -11,7 +11,7 @@ from kodi_np import config as _c
 from kodi_np.preferences import (
     ensure_preferences_dir,
     get_persisted_server_id,
-    load_preferences,
+    public_preferences,
     set_persisted_server_id,
     update_preferences,
     validate_preferences_update,
@@ -151,8 +151,8 @@ def hydrate_server_session():
 @bp.route("/api/preferences", methods=["GET"])
 def get_preferences():
     """Get user preferences"""
-    prefs = load_preferences()
-    logger.debug(f"GET preferences request, returning keys: {list(prefs.keys())}")
+    prefs = public_preferences()
+    logger.debug("GET preferences request, returning keys: %s", list(prefs.keys()))
     return jsonify(prefs)
 
 @bp.route("/api/preferences/test", methods=["GET"])

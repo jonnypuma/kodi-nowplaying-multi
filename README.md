@@ -1,4 +1,4 @@
-This is a Docker container application whcihc provides a html page showing what a Kodi device is playing and displays artwork, progress bar, media information, plot etc with background slideshow if more than one fanart is found.
+This is a Docker container application which provides an HTML page showing what a Kodi device is playing — artwork, progress, media info, plot, and a fanart slideshow when more than one image is found.
 
 <img width="2553" height="1371" alt="image" src="https://github.com/user-attachments/assets/ccccf224-4ba6-4922-98a7-737c16b230cc" />
 
@@ -15,22 +15,26 @@ for local non-Docker runs.
 
 | Module | Responsibility |
 |--------|----------------|
-| `kodi_np/config.py` | Env knobs, locks, shared process state |
+| `kodi_np/config.py` | Env knobs, Flask app, secret key |
+| `kodi_np/state.py` | In-memory cache, backoff, load jobs |
 | `kodi_np/rpc.py` | JSON-RPC client + unreachable backoff |
 | `kodi_np/servers.py` / `preferences.py` | Multi-server registry and prefs file |
-| `kodi_np/art.py` | Artwork download + identity-scoped share reuse |
-| `kodi_np/cache.py` | Per-server now-playing cache + poller |
+| `kodi_np/secretbox.py` | Encrypts custom-server Kodi passwords at rest |
+| `kodi_np/art.py` | Artwork orchestration (re-exports the `art_*` modules) |
+| `kodi_np/art_paths.py` / `art_share.py` / `art_select.py` / `art_music.py` / `art_download.py` | Path safety, share reuse, selection, music folders, HTTP fetch |
+| `kodi_np/media_info.py` | Shared stream/badge helpers for movie and episode pages |
+| `kodi_np/cache.py` | Per-server now-playing cache + background poller |
 | `kodi_np/lyrics.py` | LRC parsing + LRCLib lyrics lookup |
 | `kodi_np/music_meta.py` | Album/artist text fallbacks (TheAudioDB, Wikipedia) |
 | `kodi_np/nowplaying.py` | HTML build, load jobs, soft-update payloads |
+| `kodi_np/movie_nowplaying.py` / `episode_nowplaying.py` / `music_nowplaying.py` | Per-type HTML builders |
 | `kodi_np/routes/` | Blueprints (pages, playback, overview, extras, static) |
 | `kodi_np/app.py` | `create_app()` factory |
 | `templates/` | Jinja pages (`index`, `overview`, `loading`, media layouts, `partials/`) |
-| `episode_nowplaying.py` / `music_nowplaying.py` / `movie_nowplaying.py` | Media HTML generators (import `kodi_np.rpc`) |
 
 ## Features
 
-- **Multi-Kodi Overview**: `/overview` wall showing playing / paused / idle / offline / auth-failed status for every configured server (auto-refreshes every 5s)
+- **Multi-Kodi Overview**: `/overview` wall showing playing / paused / idle / offline / auth-failed status for every configured server (cached snapshot plus SSE; tiles refresh about every 12s)
 - **Jinja Templates**: Movie, episode, and music layouts live in `templates/` with shared side-panel partials
 - **Real-time Playback Detection**: Automatically detects when Kodi starts/stops playing media
 - **Playback State Monitoring**: Shows current play/pause state with visual indicators (status icon; not a remote control)
@@ -309,7 +313,11 @@ Optional `KODI_HOST_LABEL_N` values appear in the server dropdown, idle message,
 The idle page stays a **server picker**. On `/overview`, the **Auto-switch to playing**
 toggle (off by default) jumps to the first box that is actually playing. You can also
 add extra Kodi hosts from that page without restarting the container; numbered
-`KODI_HOST_N` entries in `.env` stay read-only.
+`KODI_HOST_N` entries in `.env` stay read-only. Passwords for hosts you add in
+the UI are encrypted in `preferences/preferences.json` using the Flask secret.
+Numbered `KODI_PASSWORD_N` values stay in `.env` (keep that file off the image
+and out of git). Changing `FLASK_SECRET_KEY` makes previously stored custom-server
+passwords unreadable, same as it invalidates sessions.
 
 ### Flask secret key (`FLASK_SECRET_KEY`)
 
@@ -458,5 +466,6 @@ Authentication is **off unless `BASIC_AUTH` is set**. While it is off, every API
 Two further controls are available:
 
 - `KODI_HOST_ALLOWLIST` restricts which hosts user-added Kodi servers may point at.
-- Custom server credentials are stored in plaintext in `preferences/preferences.json`, so keep that volume on trusted storage.
+- Custom server passwords are stored encrypted in `preferences/preferences.json`.
+  Env-defined `KODI_PASSWORD_N` values remain in `.env`.
 

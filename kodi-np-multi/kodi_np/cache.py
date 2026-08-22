@@ -268,6 +268,27 @@ def probe_playback_fingerprint(server_id, bypass_backoff=False):
     }
 
 
+def matching_cached_html(server_id, bypass_backoff=True):
+    """Return cached now-playing HTML when it still matches live playback.
+
+    Used by ``/loading`` (after the job fills the cache) and ``/nowplaying`` so
+    the browser can navigate instead of ``document.write``'ing a stale page.
+    """
+    cached = get_cache_entry(server_id)
+    if not (cached and cached.get("html") and cached.get("playing") and cached.get("cache_ready")):
+        return None
+    try:
+        probe = probe_playback_fingerprint(server_id, bypass_backoff=bypass_backoff)
+    except Exception as exc:
+        logger.debug("Cache match probe failed for server %s: %s", server_id, exc)
+        return None
+    cache_fp = cached.get("fingerprint")
+    live_fp = (probe or {}).get("fingerprint")
+    if not (probe and probe.get("playing") and cache_fp and live_fp and cache_fp == live_fp):
+        return None
+    return cached["html"]
+
+
 def _poll_state_for(server_id):
     with _c.playback_poll_lock:
         state = _c.playback_poll_state.get(server_id)

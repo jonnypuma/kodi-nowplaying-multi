@@ -118,6 +118,25 @@ def test_load_status_reports_progress(client, app_module):
         assert payload["status"] == "running"
         assert payload["progress"] == 42
         assert payload["message"] == "Fetching artwork"
+        assert payload["idle"] is False
+    finally:
+        with app_module.load_lock:
+            app_module.load_jobs.pop(job_id, None)
+
+
+def test_load_status_reports_idle_job(client, app_module):
+    job_id = "job-idle"
+    now = time.time()
+    with app_module.load_lock:
+        app_module.load_jobs[job_id] = {
+            "status": "done", "progress": 100, "message": "Idle",
+            "created_at": now, "updated_at": now, "html": "<div id=\"serverMessage\"></div>",
+            "idle": True,
+        }
+    try:
+        payload = client.get(f"/nowplaying-load-status/{job_id}").get_json()
+        assert payload["status"] == "done"
+        assert payload["idle"] is True
     finally:
         with app_module.load_lock:
             app_module.load_jobs.pop(job_id, None)

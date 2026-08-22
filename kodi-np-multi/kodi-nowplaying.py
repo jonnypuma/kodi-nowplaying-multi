@@ -43,6 +43,7 @@ from kodi_np.cache import (
     clear_cache_playback,
     get_cache_entry,
     make_playback_fingerprint,
+    matching_cached_html,
     overview_from_cache,
     probe_playback_fingerprint,
     refresh_server_cache,

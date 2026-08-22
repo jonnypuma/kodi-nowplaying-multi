@@ -21,7 +21,7 @@ if _tz:
 
 configure_logging()
 
-APP_VERSION = "3.4.1"
+APP_VERSION = "3.5.0"
 APP_DIR = Path(__file__).resolve().parent.parent
 PREFERENCES_DIR = Path(os.getenv("PREFERENCES_DIR", "/app/preferences"))
 PREFERENCES_FILE = PREFERENCES_DIR / "preferences.json"

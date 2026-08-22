@@ -1,0 +1,70 @@
+services:
+  kodi-np-multi:
+    build:
+      context: ./kodi-np-multi
+      args:
+        APP_UID: ${PUID:-3000}
+        APP_GID: ${PGID:-1000}
+    container_name: kodi-np-multi
+    image: kodi-np-multi
+    # Runs unprivileged. The mounted tmp/ and preferences/ directories must be
+    # writable by this uid:gid — see "Upgrading to 3.1.5" in the README.
+    user: "${PUID:-3000}:${PGID:-1000}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      - TZ=${TZ:-UTC}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ART_TMP_DIR=/app/tmp
+      - KODI_HOST_1=${KODI_HOST_1}
+      - KODI_HOST_LABEL_1=${KODI_HOST_LABEL_1:-}
+      - KODI_USERNAME_1=${KODI_USERNAME_1}
+      - KODI_PASSWORD_1=${KODI_PASSWORD_1}
+      # Server 2 (optional)
+      - KODI_HOST_2=${KODI_HOST_2}
+      - KODI_HOST_LABEL_2=${KODI_HOST_LABEL_2:-}
+      - KODI_USERNAME_2=${KODI_USERNAME_2}
+      - KODI_PASSWORD_2=${KODI_PASSWORD_2}
+      # Server 3 (optional)
+      - KODI_HOST_3=${KODI_HOST_3}
+      - KODI_HOST_LABEL_3=${KODI_HOST_LABEL_3:-}
+      - KODI_USERNAME_3=${KODI_USERNAME_3}
+      - KODI_PASSWORD_3=${KODI_PASSWORD_3}
+      - KODI_HOST_4=${KODI_HOST_4}
+      - KODI_HOST_LABEL_4=${KODI_HOST_LABEL_4:-}
+      - KODI_USERNAME_4=${KODI_USERNAME_4}
+      - KODI_PASSWORD_4=${KODI_PASSWORD_4}
+      - KODI_HOST_5=${KODI_HOST_5}
+      - KODI_HOST_LABEL_5=${KODI_HOST_LABEL_5:-}
+      - KODI_USERNAME_5=${KODI_USERNAME_5}
+      - KODI_PASSWORD_5=${KODI_PASSWORD_5}
+      - POLL_IDLE_CONFIRMATIONS=${POLL_IDLE_CONFIRMATIONS:-}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-}
+      - BASIC_AUTH=${BASIC_AUTH:-}
+      - CACHE_MAX_ART_FILES=${CACHE_MAX_ART_FILES:-500}
+      - CACHE_MAX_ART_MB=${CACHE_MAX_ART_MB:-1024}
+      # Parallel HTTP artwork GETs after serial PrepareDownload (1–4, default 2)
+      - ART_DOWNLOAD_WORKERS=${ART_DOWNLOAD_WORKERS:-2}
+      # Optional TheAudioDB key (default free key 123) for album/artist text fallbacks
+      - AUDIODB_API_KEY=${AUDIODB_API_KEY:-123}
+    env_file:
+      - ./.env
+    ports:
+      - 6001:6001
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - ./kodi-np-multi/tmp:/app/tmp
+      - ./kodi-np-multi/preferences:/app/preferences
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6001/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

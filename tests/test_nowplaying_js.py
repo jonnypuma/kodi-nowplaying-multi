@@ -50,3 +50,41 @@ def test_overview_has_auto_switch_toggle():
     assert "addServerForm" in html
     assert "/api/events?topic=overview" in html
     assert "backoff_remaining" in html
+
+
+def test_idle_page_does_not_fade_on_transient_or_error_polls():
+    html = (
+        Path(__file__).resolve().parents[1]
+        / "kodi-np-multi"
+        / "templates"
+        / "index.html"
+    ).read_text(encoding="utf-8")
+    assert "data.transient_idle === true" in html
+    assert "cancelPlaybackRedirect" in html
+    assert "playbackRedirecting" in html
+    assert "body.page-enter" in html
+    assert "animation: fadeIn 1.5s ease;" not in html.split("body.page-enter", 1)[0]
+
+
+def test_loading_page_navigates_instead_of_document_write():
+    html = (
+        Path(__file__).resolve().parents[1]
+        / "kodi-np-multi"
+        / "templates"
+        / "loading.html"
+    ).read_text(encoding="utf-8")
+    assert "document.write" not in html
+    assert "window.location.replace('/nowplaying')" in html or 'window.location.replace(path)' in html
+    assert "data.idle" in html
+    assert "goTo(data.idle ? '/' : '/nowplaying')" in html
+
+
+def test_idle_page_polls_immediately():
+    html = (
+        Path(__file__).resolve().parents[1]
+        / "kodi-np-multi"
+        / "templates"
+        / "index.html"
+    ).read_text(encoding="utf-8")
+    assert "checkPlaybackChange();" in html
+    assert "setInterval(checkPlaybackChange, PLAYBACK_POLL_MS)" in html

@@ -421,6 +421,7 @@ def run_nowplaying_job(job_id: str):
                     job = _c.load_jobs.get(job_id)
                     if job is not None:
                         job["html"] = html
+                        job["idle"] = bool(isinstance(payload, dict) and payload.get("idle"))
                 if server_id is not None and isinstance(payload, dict):
                     if payload.get("idle") or not payload.get("html"):
                         clear_cache_playback(server_id, {"connected": True, "error": None})

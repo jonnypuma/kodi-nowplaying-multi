@@ -15,9 +15,14 @@
                 height: 100vh;
                 opacity: 1;
                 transition: opacity 1.5s ease;
-                animation: fadeIn 1.5s ease;
+            }
+            /* One-shot enter animation. Must not share the opacity property with
+               fade-out's transition, or a cancelled redirect leaves the page dim. */
+            body.page-enter {
+                animation: fadeIn 1.5s ease forwards;
             }
             body.fade-out {
+                animation: none;
                 opacity: 0;
             }
             @keyframes fadeIn {
@@ -340,7 +345,7 @@
             }
         </style>
     </head>
-    <body>
+    <body class="page-enter">
         <div class="message-box">
             <div id="serverMessage">🎬 No Media Currently Playing<br>Awaiting Media Playback</div>
             <div style="margin-top: 18px; font-size: 0.65em; font-style: normal;">
@@ -379,7 +384,18 @@
             let currentServerId = null;
             let playbackPollInFlight = false;
             let playbackPollTimer = null;
+            let playbackRedirectTimer = null;
+            let playbackRedirecting = false;
             const PLAYBACK_POLL_MS = 4000;
+
+            function cancelPlaybackRedirect() {
+                if (playbackRedirectTimer) {
+                    clearTimeout(playbackRedirectTimer);
+                    playbackRedirectTimer = null;
+                }
+                playbackRedirecting = false;
+                document.body.classList.remove('fade-out');
+            }
 
             function toggleSidePanel() {
                 const panel = document.getElementById('sidePanel');
@@ -528,19 +544,22 @@
                     .then(data => {
                         const currentState = data.playing;
                         const isError = data.error === true;
-                        if (isError || data.error_idle === true) {
-                            console.log('[DEBUG] Poll playback error flagged, skipping redirect');
+                        if (isError || data.error_idle === true || data.transient_idle === true) {
                             return;
                         }
-                        // Only fade out and redirect if media starts playing (transitions from false to true)
-                        // Don't fade if transitioning from true to false (that would make screen dim)
-                        if (currentState === true && lastPlaybackState === false) {
+                        if (currentState === true && lastPlaybackState === false && !playbackRedirecting) {
+                            playbackRedirecting = true;
+                            document.body.classList.remove('page-enter');
                             document.body.classList.add('fade-out');
-                            setTimeout(() => {
+                            playbackRedirectTimer = setTimeout(() => {
                                 window.location.href = '/loading';
                             }, 1500);
+                        } else if (currentState === false && playbackRedirecting) {
+                            cancelPlaybackRedirect();
                         }
-                        lastPlaybackState = currentState;
+                        if (currentState === true || currentState === false) {
+                            lastPlaybackState = currentState;
+                        }
                     })
                     .catch(error => {
                         console.error('Polling error:', error);
@@ -553,6 +572,11 @@
             // Initialize on page load
             document.addEventListener('DOMContentLoaded', () => {
                 loadServers();
+                document.body.addEventListener('animationend', (event) => {
+                    if (event.target === document.body) {
+                        document.body.classList.remove('page-enter');
+                    }
+                });
                 // Check initial state of side panel and set arrow accordingly
                 const panel = document.getElementById('sidePanel');
                 const arrow = document.querySelector('.side-panel-toggle-arrow');
@@ -564,6 +588,7 @@
             });
             
             if (playbackPollTimer) clearInterval(playbackPollTimer);
+            checkPlaybackChange();
             playbackPollTimer = setInterval(checkPlaybackChange, PLAYBACK_POLL_MS);
         </script>
     </body>

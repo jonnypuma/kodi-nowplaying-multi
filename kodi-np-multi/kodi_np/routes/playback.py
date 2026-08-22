@@ -11,8 +11,7 @@ from flask import Blueprint, has_request_context, jsonify, request, session
 from kodi_np import config as _c
 from kodi_np.cache import (
     _poll_state_for,
-    get_cache_entry,
-    probe_playback_fingerprint,
+    matching_cached_html,
 )
 from kodi_np.nowplaying import (
     build_nowplaying_html,
@@ -212,43 +211,21 @@ def start_nowplaying_load():
     prune_load_jobs()
     job_id = uuid.uuid4().hex
     server_id = session.get('active_server_id', 1) if has_request_context() else 1
-    cached = get_cache_entry(server_id)
-    # Only serve cache when it matches what Kodi is actually playing now.
-    # Otherwise a track/artist change returns the previous page until the poller catches up.
-    if cached and cached.get("html") and cached.get("playing") and cached.get("cache_ready"):
-        probe = None
-        try:
-            probe = probe_playback_fingerprint(server_id, bypass_backoff=True)
-        except Exception as e:
-            logger.debug("Cache-hit probe failed for server %s: %s", server_id, e)
-        cache_fp = cached.get("fingerprint")
-        live_fp = (probe or {}).get("fingerprint")
-        if (
-            probe
-            and probe.get("playing")
-            and cache_fp
-            and live_fp
-            and cache_fp == live_fp
-        ):
-            with _c.load_lock:
-                _c.load_jobs[job_id] = {
-                    "status": "done",
-                    "progress": 100,
-                    "message": "Cached",
-                    "created_at": time.time(),
-                    "updated_at": time.time(),
-                    "html": cached["html"],
-                    "server_id": server_id,
-                    "cache_hit": True,
-                }
-            return jsonify({"job_id": job_id, "cache_hit": True})
-        logger.info(
-            "Skipping stale cache for server %s (cache_fp=%s live_fp=%s playing=%s)",
-            server_id,
-            cache_fp,
-            live_fp,
-            (probe or {}).get("playing"),
-        )
+    cached_html = matching_cached_html(server_id)
+    if cached_html:
+        with _c.load_lock:
+            _c.load_jobs[job_id] = {
+                "status": "done",
+                "progress": 100,
+                "message": "Cached",
+                "created_at": time.time(),
+                "updated_at": time.time(),
+                "html": cached_html,
+                "idle": False,
+                "server_id": server_id,
+                "cache_hit": True,
+            }
+        return jsonify({"job_id": job_id, "cache_hit": True})
 
     with _c.load_lock:
         _c.load_jobs[job_id] = {
@@ -258,6 +235,7 @@ def start_nowplaying_load():
             "created_at": time.time(),
             "updated_at": time.time(),
             "html": None,
+            "idle": False,
             "server_id": server_id
         }
     thread = threading.Thread(target=run_nowplaying_job, args=(job_id,), daemon=True)
@@ -274,7 +252,8 @@ def nowplaying_load_status(job_id):
         return jsonify({
             "status": job["status"],
             "progress": job["progress"],
-            "message": job.get("message", "")
+            "message": job.get("message", ""),
+            "idle": bool(job.get("idle")),
         })
 
 @bp.route("/nowplaying-content/<job_id>")
@@ -344,4 +323,10 @@ def now_playing():
             "duration": kodi_time_to_seconds(d),
             "paused": speed == 0
         })
+    active = get_active_server()
+    server_id = active.get("id") if active else None
+    if server_id is not None:
+        cached_html = matching_cached_html(server_id)
+        if cached_html:
+            return cached_html
     return build_nowplaying_html()

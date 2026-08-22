@@ -157,6 +157,30 @@ def validate_preferences_update(data):
     return sanitized, None
 
 
+def public_preferences(prefs=None):
+    """Preferences safe to send to the browser: no Kodi passwords, even encrypted."""
+    data = dict(prefs if prefs is not None else load_preferences())
+    raw = data.get("custom_servers")
+    if not isinstance(raw, list):
+        return data
+    cleaned = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            cleaned.append(entry)
+            continue
+        row = {
+            key: value
+            for key, value in entry.items()
+            if key not in ("password", "password_enc")
+        }
+        row["has_auth"] = bool(
+            entry.get("username") or entry.get("password") or entry.get("password_enc")
+        )
+        cleaned.append(row)
+    data["custom_servers"] = cleaned
+    return data
+
+
 def get_persisted_server_id():
     prefs = load_preferences()
     server_id = prefs.get("active_server_id")

@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.0] - 2026-08-22
+
+### Security
+- Passwords for Kodi hosts added in the UI are encrypted in
+  `preferences.json` (`password_enc`, Fernet keyed from the Flask secret).
+  Legacy plaintext `password` fields are migrated on startup. `/api/servers`
+  and `/api/preferences` never return the secret, encrypted or not.
+  `KODI_PASSWORD_N` in `.env` is unchanged.
+
+### Changed
+- `/loading` navigates to `/nowplaying` (or `/` when idle) when the load job
+  finishes. It no longer `document.write`s HTML over a fading body. `/nowplaying`
+  serves the warm cache when it still matches live playback, so that navigation
+  does not rebuild the page from scratch.
+- The idle page polls `/poll_playback` as soon as it loads, instead of waiting
+  four seconds for the first interval tick.
+- README matches the current layout, overview refresh, and password handling.
+
+## [3.4.2] - 2026-08-22
+
+### Fixed
+- The idle "No media playing" page treated a `transient_idle` poll as playback
+  starting, faded the whole body toward `/loading`, and never removed
+  `fade-out` if the redirect did not complete. That left the message box and
+  overview link stuck dim until a refresh. The idle page now ignores
+  `transient_idle` / error polls the same way the now-playing pages do, and
+  cancels the fade if a later poll confirms nothing is playing.
+- A load job that resolves to idle now sends the loading screen to `/` instead
+  of `document.write`'ing the idle HTML over a body whose opacity was already
+  0. That path was the other way the idle page could come back half-faded.
+
 ## [3.4.1] - 2026-08-16
 
 ### Fixed
