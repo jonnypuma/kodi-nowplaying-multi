@@ -700,6 +700,36 @@
     return fmt(elapsed) + " / " + fmt(duration);
   }
 
+  function applyUpNextLabel(label) {
+    var text = String(label || "").trim();
+    var el = document.getElementById("up-next");
+    if (!text) {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+      return;
+    }
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "up-next";
+      el.id = "up-next";
+      var prefix = document.createElement("span");
+      prefix.className = "up-next-label";
+      prefix.textContent = "Up next";
+      var title = document.createElement("span");
+      title.className = "up-next-title";
+      el.appendChild(prefix);
+      el.appendChild(document.createTextNode(" "));
+      el.appendChild(title);
+      var progress = document.querySelector(".progress-wrapper");
+      if (progress && progress.parentNode) {
+        progress.parentNode.insertBefore(el, progress);
+      } else {
+        (document.querySelector(".content") || document.body).appendChild(el);
+      }
+    }
+    var titleEl = el.querySelector(".up-next-title");
+    if (titleEl) titleEl.textContent = text;
+  }
+
   function paintProgress(elapsed, duration) {
     if (!(duration > 0)) return;
     var percent = (elapsed / duration) * 100;
@@ -775,6 +805,7 @@
   }
 
   window.NowPlayingRuntime = {
+    applyUpNextLabel: applyUpNextLabel,
     startClock: function (clock) {
       if (!clock || window._npClockStarted) return;
       window._npClockStarted = true;

@@ -150,6 +150,7 @@ def patch_into(monkeypatch):
             "kodi_np.overview.kodi_rpc",
             "kodi_np.routes.playback.kodi_rpc",
             "kodi_np.routes.servers_prefs.kodi_rpc",
+            "kodi_np.playlist.kodi_rpc",
         ],
         "get_active_server": [
             "kodi_np.servers.get_active_server",

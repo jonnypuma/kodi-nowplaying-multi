@@ -26,6 +26,7 @@ def test_nowplaying_runtime_is_shared():
     assert "window.NowPlayingRuntime" in js
     assert "startClock:" in js
     assert "startPlaybackMonitor:" in js
+    assert "applyUpNextLabel:" in js
     assert "/api/events?topic=playback" in js
 
 
@@ -36,6 +37,8 @@ def test_templates_boot_shared_runtime():
         assert "NowPlayingRuntime.startClock" in html
         assert "NowPlayingRuntime.startPlaybackMonitor" in html
         assert "up_next_html" in html
+        if name != "movie_nowplaying.html":
+            assert "NowPlayingRuntime.applyUpNextLabel" in html
 
 
 def test_overview_has_auto_switch_toggle():
@@ -47,6 +50,8 @@ def test_overview_has_auto_switch_toggle():
     ).read_text(encoding="utf-8")
     assert "autoSwitchToggle" in html
     assert "Auto-switch to playing" in html
+    assert "autoSwitchArmed" in html
+    assert "app-version-badge" in html
     assert "addServerForm" in html
     assert "/api/events?topic=overview" in html
     assert "backoff_remaining" in html
@@ -88,3 +93,5 @@ def test_idle_page_polls_immediately():
     ).read_text(encoding="utf-8")
     assert "checkPlaybackChange();" in html
     assert "setInterval(checkPlaybackChange, PLAYBACK_POLL_MS)" in html
+    assert "app-version-badge" in html
+    assert "app_version" in html

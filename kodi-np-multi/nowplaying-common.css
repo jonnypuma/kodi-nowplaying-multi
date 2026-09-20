@@ -362,6 +362,26 @@ body.episode-now-playing .episode-prefs-only {
   gap: var(--sp-gap);
   font-size: 0.88rem;
 }
+.app-version-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.3;
+  text-transform: lowercase;
+  color: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.side-panel-body > .app-version-badge {
+  align-self: flex-start;
+  margin-bottom: calc(var(--sp-gap) * -0.45);
+}
 .side-panel h1.retroshadow {
   font-size: 1.25rem !important;
   margin: 0 !important;

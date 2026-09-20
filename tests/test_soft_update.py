@@ -1,6 +1,21 @@
 """Tests for same-identity soft-update eligibility and payloads."""
 
 
+def _playlist_rpc(inner, items, position=1, playlistid=0):
+    """Answer playlist queries; delegate everything else to ``inner``."""
+
+    def fake_rpc(method, params=None, **_kwargs):
+        if method == "Player.GetProperties":
+            props = (params or {}).get("properties") or []
+            if "playlistid" in props or "position" in props:
+                return {"result": {"playlistid": playlistid, "position": position}}
+        if method == "Playlist.GetItems":
+            return {"result": {"items": items}}
+        return inner(method, params)
+
+    return fake_rpc
+
+
 def _progress(elapsed=10, duration=1200, speed=1):
     h, rem = divmod(elapsed, 3600)
     m, s = divmod(rem, 60)
@@ -46,7 +61,19 @@ def test_soft_update_episode_same_show(app_module, patch_into):
             return {"result": {"episodedetails": {"plot": "Plot 2", "title": "Next Ep"}}}
         return {"result": {}}
 
-    patch_into(app_module, "kodi_rpc", fake_rpc)
+    patch_into(
+        app_module,
+        "kodi_rpc",
+        _playlist_rpc(
+            fake_rpc,
+            [
+                {"title": "First", "showtitle": "Demo", "season": 1, "episode": 1},
+                {"title": "Next Ep", "showtitle": "Demo", "season": 1, "episode": 2},
+                {"title": "Later", "showtitle": "Demo", "season": 1, "episode": 3},
+            ],
+            position=1,
+        ),
+    )
     patch_into(app_module, "get_active_server", lambda: {"id": 1})
     patch_into(app_module, "get_cache_entry", lambda _sid: {"share": app_module.empty_share()})
 
@@ -66,6 +93,7 @@ def test_soft_update_episode_same_show(app_module, patch_into):
     assert out["identity"]["tvshow_id"] == 9
     assert out["elapsed"] == 30
     assert out["duration"] == 2400
+    assert out["up_next_label"] == "Demo · S01E03 · Later"
 
 
 def test_soft_update_episode_different_show(app_module, patch_into):
@@ -163,7 +191,19 @@ def test_soft_update_song_same_album(app_module, patch_into):
             }
         return {"result": {}}
 
-    patch_into(app_module, "kodi_rpc", fake_rpc)
+    patch_into(
+        app_module,
+        "kodi_rpc",
+        _playlist_rpc(
+            fake_rpc,
+            [
+                {"title": "Track One", "artist": ["Band"], "album": "Same Album"},
+                {"title": "Track Two", "artist": ["Band"], "album": "Same Album"},
+                {"title": "Track Three", "artist": ["Band"], "album": "Same Album"},
+            ],
+            position=1,
+        ),
+    )
     patch_into(app_module, "get_active_server", lambda: {"id": 1})
     share = app_module.empty_share()
     share["album_details"] = {
@@ -193,6 +233,7 @@ def test_soft_update_song_same_album(app_module, patch_into):
     assert out["lyrics"]["title"] == "Track Two"
     assert out["lyrics"]["artist"] == "Band"
     assert out["lyrics"]["album"] == "Same Album"
+    assert out["up_next_label"] == "Band — Track Three (Same Album)"
 
 
 def test_soft_update_song_multi_disc_shows_badge(app_module, patch_into):
@@ -244,6 +285,7 @@ def test_soft_update_song_multi_disc_shows_badge(app_module, patch_into):
     assert out["soft"] is True
     assert out["badges"]["disc"] == "Disc 2"
     assert out["badges"]["track"] == "Track 01"
+    assert out["up_next_label"] == ""
 
 
 def test_soft_update_song_different_album_and_artist(app_module, patch_into):
@@ -360,3 +402,9 @@ def test_templates_include_soft_identity(app_module, monkeypatch):
     assert "window.SOFT_IDENTITY" in song
     assert "soft-badge-track" in song
     assert "attemptSoftUpdate" in song
+    assert "NowPlayingRuntime.applyUpNextLabel" in ep
+    assert "NowPlayingRuntime.applyUpNextLabel" in song
+    assert "app-version-badge" in ep
+    assert f"v{app_module.APP_VERSION}" in ep
+    assert "app-version-badge" in song
+    assert f"v{app_module.APP_VERSION}" in song

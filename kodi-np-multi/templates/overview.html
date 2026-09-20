@@ -32,6 +32,19 @@
                 flex-wrap: wrap;
                 padding: 28px 32px 8px;
             }
+            .header-title {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                flex-wrap: wrap;
+                min-width: 0;
+            }
+            .header-title h1 {
+                line-height: 1;
+            }
+            .header-title .app-version-badge {
+                align-self: center;
+            }
             .header-controls {
                 display: flex;
                 align-items: center;
@@ -106,6 +119,21 @@
                 color: transparent;
                 filter: drop-shadow(0 0 12px rgba(255, 107, 53, 0.35))
                         drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.45));
+            }
+            .app-version-badge {
+                display: inline-flex;
+                align-items: center;
+                padding: 3px 10px;
+                border-radius: 999px;
+                font-size: 0.78rem;
+                font-weight: 600;
+                letter-spacing: 0.08em;
+                line-height: 1.3;
+                text-transform: lowercase;
+                color: rgba(255, 255, 255, 0.7);
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.16);
+                flex-shrink: 0;
             }
             #grid {
                 display: grid;
@@ -236,7 +264,10 @@
     </head>
     <body>
         <header>
-            <h1>Kodi Now Playing Overview</h1>
+            <div class="header-title">
+                <h1>Kodi Now Playing Overview</h1>
+                <span class="app-version-badge" title="kodi-np-multi {{ app_version }}">v{{ app_version }}</span>
+            </div>
             <div class="header-controls">
                 <label class="auto-switch" for="autoSwitchToggle">Auto-switch to playing</label>
                 <label class="toggle">
@@ -267,12 +298,13 @@
             let knownServerIds = [];
             let refreshInFlight = false;
             let autoSwitchEnabled = false;
+            let autoSwitchArmed = false;
             let autoSwitching = false;
             let latestServers = [];
             let serverById = {};
 
             function maybeAutoSwitch(servers) {
-                if (!autoSwitchEnabled || autoSwitching) return;
+                if (!autoSwitchArmed || !autoSwitchEnabled || autoSwitching) return;
                 const playing = (servers || []).filter(server => server.playing && server.connected && !server.loading);
                 if (!playing.length) return;
                 autoSwitching = true;
@@ -281,6 +313,8 @@
 
             async function persistAutoSwitch(enabled) {
                 autoSwitchEnabled = enabled;
+                autoSwitchArmed = enabled;
+                autoSwitchToggle.checked = enabled;
                 localStorage.setItem('autoSwitchPlayingPreference', enabled ? 'enabled' : 'disabled');
                 try {
                     await fetch('/api/preferences', {
@@ -289,21 +323,34 @@
                         body: JSON.stringify({autoSwitchPlayingPreference: enabled ? 'enabled' : 'disabled'})
                     });
                 } catch (e) {}
-                maybeAutoSwitch(latestServers);
+                if (enabled) maybeAutoSwitch(latestServers);
             }
 
             async function loadAutoSwitchPref() {
-                const local = localStorage.getItem('autoSwitchPlayingPreference') === 'enabled';
-                autoSwitchToggle.checked = local;
-                autoSwitchEnabled = local;
+                let saved = localStorage.getItem('autoSwitchPlayingPreference') === 'enabled';
                 try {
                     const res = await fetch('/api/preferences');
                     const prefs = res.ok ? await res.json() : {};
                     if (prefs.autoSwitchPlayingPreference) {
-                        autoSwitchEnabled = prefs.autoSwitchPlayingPreference === 'enabled';
-                        autoSwitchToggle.checked = autoSwitchEnabled;
+                        saved = prefs.autoSwitchPlayingPreference === 'enabled';
                     }
                 } catch (e) {}
+                autoSwitchToggle.checked = false;
+                autoSwitchEnabled = false;
+                autoSwitchArmed = false;
+                // Returning to overview (or opening it later) must not bounce
+                // back to the playing server. Auto-switch only runs after the
+                // user turns the toggle on during this visit.
+                if (saved) {
+                    localStorage.setItem('autoSwitchPlayingPreference', 'disabled');
+                    try {
+                        await fetch('/api/preferences', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({autoSwitchPlayingPreference: 'disabled'})
+                        });
+                    } catch (e) {}
+                }
             }
 
             function isAuthFailed(server) {
@@ -650,6 +697,12 @@
             }
 
             autoSwitchToggle.addEventListener('change', () => persistAutoSwitch(autoSwitchToggle.checked));
+            window.addEventListener('pageshow', (event) => {
+                if (!event.persisted) return;
+                if (autoSwitchArmed || autoSwitchEnabled || autoSwitchToggle.checked) {
+                    persistAutoSwitch(false);
+                }
+            });
             loadAutoSwitchPref().then(() => initialLoad());
             setInterval(refreshTiles, REFRESH_MS);
             try {

@@ -2,6 +2,8 @@ def test_auth_disabled_by_default(client, app_module):
     app_module.BASIC_AUTH = ""
     response = client.get("/")
     assert response.status_code == 200
+    assert b"app-version-badge" in response.data
+    assert f"v{app_module.APP_VERSION}".encode() in response.data
 
 
 def test_optional_auth_login(client, app_module):

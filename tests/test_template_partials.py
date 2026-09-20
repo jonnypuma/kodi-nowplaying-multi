@@ -74,3 +74,10 @@ def test_partials_are_self_contained(jinja_env, partial):
     # A partial is spliced verbatim into three pages, so it must not depend on
     # any one page's template context.
     assert "{%" not in source and "{{" not in source
+
+
+@pytest.mark.parametrize("page", PAGES)
+def test_rendered_side_panel_includes_version(jinja_env, app_module, page):
+    html = jinja_env.get_template(page).render()
+    assert "app-version-badge" in html
+    assert f"v{app_module.APP_VERSION}" in html

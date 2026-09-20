@@ -1065,6 +1065,9 @@
             if (data.item_id) {
               lastItemId = data.item_id;
             }
+            if (window.NowPlayingRuntime && typeof NowPlayingRuntime.applyUpNextLabel === 'function') {
+              NowPlayingRuntime.applyUpNextLabel(data.up_next_label);
+            }
             content.classList.remove('soft-fade');
           }, 280);
         }

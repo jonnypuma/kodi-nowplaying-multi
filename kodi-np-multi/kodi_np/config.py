@@ -21,7 +21,7 @@ if _tz:
 
 configure_logging()
 
-APP_VERSION = "3.5.0"
+APP_VERSION = "3.5.2"
 APP_DIR = Path(__file__).resolve().parent.parent
 PREFERENCES_DIR = Path(os.getenv("PREFERENCES_DIR", "/app/preferences"))
 PREFERENCES_FILE = PREFERENCES_DIR / "preferences.json"
@@ -47,6 +47,7 @@ def _resolve_secret_key() -> str:
 
 app = Flask(__name__, template_folder=str(APP_DIR / "templates"))
 app.secret_key = _resolve_secret_key()
+app.jinja_env.globals["app_version"] = APP_VERSION
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"

@@ -1,5 +1,5 @@
 {
-  "overlayOpacity": "77",
+  "overlayOpacity": "83",
   "blurPreference": "non-blurred",
   "blurAmount": "71",
   "marqueeInterval": "14",
@@ -7,7 +7,7 @@
   "overlayPreference": "enabled",
   "active_server_id": 3,
   "fanartMinSizeKB": "55",
-  "lyricsPanelPreference": "artist",
+  "lyricsPanelPreference": "lyrics",
   "episodeTaglinePreference": "enabled",
   "episodeSeasonPlotPreference": "enabled",
   "autoSwitchPlayingPreference": "disabled"

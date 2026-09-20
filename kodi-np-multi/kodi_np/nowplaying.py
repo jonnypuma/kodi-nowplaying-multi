@@ -472,10 +472,18 @@ def build_nowplaying_soft_update(prev):
     paused = speed == 0
 
     if media_type == "episode":
-        return _soft_update_episode(item, prev, prev_type, prior_share, active_server_id, elapsed, duration, paused)
-    if media_type == "song":
-        return _soft_update_song(item, prev, prev_type, prior_share, active_server_id, elapsed, duration, paused)
-    return {"soft": False, "reason": "unsupported_type", "media_type": media_type}
+        payload = _soft_update_episode(
+            item, prev, prev_type, prior_share, active_server_id, elapsed, duration, paused
+        )
+    elif media_type == "song":
+        payload = _soft_update_song(
+            item, prev, prev_type, prior_share, active_server_id, elapsed, duration, paused
+        )
+    else:
+        return {"soft": False, "reason": "unsupported_type", "media_type": media_type}
+    if payload.get("soft"):
+        payload["up_next_label"] = get_up_next_label(player_id, item)
+    return payload
 
 
 def _soft_update_episode(item, prev, prev_type, prior_share, active_server_id, elapsed, duration, paused):

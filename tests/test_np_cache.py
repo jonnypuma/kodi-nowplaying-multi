@@ -192,6 +192,8 @@ def test_overview_link_in_nowplaying_templates():
     partial = (root / "partials" / "side_panel.html").read_text(encoding="utf-8")
     assert 'href="/overview"' in partial
     assert "Multi-server overview" in partial
+    assert "app-version-badge" in partial
+    assert "app_version" in partial
     for name in ("movie_nowplaying.html", "episode_nowplaying.html", "music_nowplaying.html"):
         text = (root / name).read_text(encoding="utf-8")
         assert "partials/side_panel.html" in text

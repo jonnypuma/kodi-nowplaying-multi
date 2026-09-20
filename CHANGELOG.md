@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.2] - 2026-09-20
+
+### Added
+- Version badge in the upper left of the now-playing / idle settings panel,
+  and next to the overview heading.
+
+### Fixed
+- Auto-switch to playing trapped you on the now-playing page: returning to
+  `/overview` immediately jumped back to the playing server. Opening overview
+  now turns the toggle off (and persists that) so you can stay on the wall.
+  Enabling it again on that visit still jumps when something is playing.
+
+## [3.5.1] - 2026-08-23
+
+### Fixed
+- Same-album / same-artist music (and same-show episode) autoplay uses a soft
+  update that never refreshed Up Next, so the row kept showing the track that
+  had just started. Soft-update JSON now includes `up_next_label`, and the
+  now-playing page replaces or removes `#up-next` in place.
+
 ## [3.5.0] - 2026-08-22
 
 ### Security

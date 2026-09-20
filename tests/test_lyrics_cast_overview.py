@@ -127,3 +127,4 @@ def test_overview_page_mentions_auto_refresh(client):
     assert b"Auto-refresh every" in response.data
     assert b"Auto-switch to playing" in response.data
     assert b"auth-failed" in response.data
+    assert b"autoSwitchArmed" in response.data

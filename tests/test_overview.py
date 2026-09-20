@@ -65,13 +65,15 @@ def test_probe_playback_fingerprint_uses_overview_title(app_module, patch_into):
     assert "S01E01" in probe["title"]
 
 
-def test_overview_page_renders(client):
+def test_overview_page_renders(client, app_module):
     response = client.get("/overview")
     assert response.status_code == 200
     assert b"Kodi Now Playing Overview" in response.data
     assert b"Checking servers" in response.data
     assert b"tile-retry" in response.data
     assert b"/api/retry-server/" in response.data
+    assert b"app-version-badge" in response.data
+    assert f"v{app_module.APP_VERSION}".encode() in response.data
 
 
 def test_api_overview_fast_snapshot(client, app_module, patch_into):
