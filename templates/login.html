@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · Kodi Now Playing</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh; margin: 0; display: grid; place-items: center;
+      font-family: "Century Gothic", Arial, sans-serif; color: #fff;
+      background: radial-gradient(circle at 20% 20%, #3a2115, transparent 42%),
+                  linear-gradient(145deg, #101010, #262626 60%, #142218);
+    }
+    .login-card {
+      width: min(92vw, 420px); padding: 42px 38px; border-radius: 22px;
+      background: rgba(8, 8, 8, .78); border: 1px solid rgba(255,255,255,.14);
+      box-shadow: 0 22px 70px rgba(0,0,0,.55), 0 0 35px rgba(255,107,53,.12);
+      backdrop-filter: blur(18px);
+    }
+    h1 {
+      margin: 0 0 8px; font-family: "Arial Black", Arial, sans-serif;
+      letter-spacing: .08em; text-transform: uppercase; font-size: 1.5rem;
+      background: linear-gradient(90deg, #ff6b35, #f7931e 45%, #70d47a);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    p { color: rgba(255,255,255,.68); margin: 0 0 28px; }
+    label { display: block; margin: 16px 0 7px; color: rgba(255,255,255,.82); font-size: .9rem; }
+    input {
+      width: 100%; padding: 13px 14px; border-radius: 10px;
+      border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.08);
+      color: #fff; font-size: 1rem; outline: none;
+    }
+    input:focus { border-color: #70d47a; box-shadow: 0 0 0 3px rgba(112,212,122,.18); }
+    button {
+      width: 100%; margin-top: 26px; padding: 13px; border: 0; border-radius: 10px;
+      color: #101010; font-weight: 700; font-size: 1rem; cursor: pointer;
+      background: linear-gradient(90deg, #ff6b35, #f7931e 45%, #70d47a);
+    }
+    .error { padding: 10px 12px; border-radius: 8px; color: #ffb4ab; background: rgba(229,57,53,.18); }
+  </style>
+</head>
+<body>
+  <main class="login-card">
+    <h1>Kodi Now Playing</h1>
+    <p>Sign in to open your multi-server dashboard.</p>
+    {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+    <form method="post">
+      <input type="hidden" name="next" value="{{ next }}">
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" required autofocus>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button type="submit">Sign in</button>
+    </form>
+  </main>
+</body>
+</html>

@@ -1,0 +1,21 @@
+        async function switchServerFromDropdown(serverId) {
+          if (!serverId) return;
+          
+          try {
+            const response = await fetch(`/api/switch-server/${serverId}`, {
+              method: 'POST'
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+              currentServerId = serverId;
+              // Show loading screen then reload
+              document.body.classList.add('fade-out');
+              setTimeout(() => {
+                window.location.href = '/loading';
+              }, 500);
+            }
+          } catch (error) {
+            console.error('Failed to switch server:', error);
+          }
+        }

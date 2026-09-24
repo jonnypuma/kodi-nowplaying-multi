@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ code }} · Kodi Now Playing</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh; margin: 0; display: grid; place-items: center;
+      font-family: "Century Gothic", Arial, sans-serif; color: #fff;
+      background: radial-gradient(circle at 20% 20%, #3a2115, transparent 42%),
+                  linear-gradient(145deg, #101010, #262626 60%, #142218);
+    }
+    .error-card {
+      width: min(92vw, 460px); padding: 42px 38px; border-radius: 22px; text-align: center;
+      background: rgba(8, 8, 8, .78); border: 1px solid rgba(255,255,255,.14);
+      box-shadow: 0 22px 70px rgba(0,0,0,.55), 0 0 35px rgba(255,107,53,.12);
+      backdrop-filter: blur(18px);
+    }
+    .code {
+      font-family: "Arial Black", Arial, sans-serif; font-size: 4rem; line-height: 1;
+      letter-spacing: .04em; margin: 0;
+      background: linear-gradient(90deg, #ff6b35, #f7931e 45%, #70d47a);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    h1 {
+      margin: 14px 0 10px; font-size: 1.2rem; letter-spacing: .08em;
+      text-transform: uppercase; color: rgba(255,255,255,.9);
+    }
+    p { color: rgba(255,255,255,.68); margin: 0 0 28px; line-height: 1.5; }
+    a {
+      display: inline-block; padding: 12px 26px; border-radius: 10px;
+      color: #101010; font-weight: 700; text-decoration: none;
+      background: linear-gradient(90deg, #ff6b35, #f7931e 45%, #70d47a);
+    }
+  </style>
+</head>
+<body>
+  <main class="error-card">
+    <p class="code">{{ code }}</p>
+    <h1>{{ name }}</h1>
+    <p>{{ description }}</p>
+    <a href="/">Back to dashboard</a>
+  </main>
+</body>
+</html>

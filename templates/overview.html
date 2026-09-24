@@ -1,0 +1,721 @@
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Kodi Now Playing Overview</title>
+        <link rel="stylesheet" href="/static/nowplaying-common.css">
+        <script src="/static/nowplaying-common.js"></script>
+        <style>
+            :root {
+                --bg0: #141414;
+                --bg1: #222;
+                --card: rgba(0, 0, 0, 0.55);
+                --green: #4caf50;
+                --amber: #ffb300;
+                --red: #e53935;
+                --muted: rgba(255, 255, 255, 0.65);
+            }
+            * { box-sizing: border-box; }
+            body {
+                margin: 0;
+                min-height: 100vh;
+                font-family: "Century Gothic", CenturyGothic, AppleGothic, sans-serif;
+                color: #fff;
+                background: linear-gradient(145deg, var(--bg0), var(--bg1) 55%, #2a2a2a);
+            }
+            header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 18px;
+                flex-wrap: wrap;
+                padding: 28px 32px 8px;
+            }
+            .header-title {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                flex-wrap: wrap;
+                min-width: 0;
+            }
+            .header-title h1 {
+                line-height: 1;
+            }
+            .header-title .app-version-badge {
+                align-self: center;
+            }
+            .header-controls {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }
+            .auto-switch {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                color: var(--muted);
+                font-size: 0.9rem;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            }
+            .toggle { position: relative; display: inline-block; }
+            .toggle__input { position: absolute; opacity: 0; width: 0; height: 0; }
+            .toggle-track {
+                display: block; width: 48px; height: 26px; border-radius: 999px;
+                background: rgba(255,255,255,0.18); position: relative; cursor: pointer;
+            }
+            .toggle-indicator {
+                position: absolute; width: 20px; height: 20px; top: 3px; left: 3px;
+                border-radius: 50%; background: #fff; transition: transform 0.18s ease;
+            }
+            .toggle__input:checked + .toggle-track { background: rgba(76,175,80,0.7); }
+            .toggle__input:checked + .toggle-track .toggle-indicator { transform: translateX(22px); }
+            .add-server {
+                margin: 0 32px 28px;
+                padding: 18px;
+                background: var(--card);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 12px;
+                display: grid;
+                gap: 10px;
+                max-width: 720px;
+            }
+            .add-server h2 {
+                margin: 0;
+                font-size: 0.95rem;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                color: var(--muted);
+            }
+            .add-server-row { display: flex; flex-wrap: wrap; gap: 8px; }
+            .add-server input {
+                flex: 1 1 140px;
+                min-width: 0;
+                padding: 8px 10px;
+                border-radius: 8px;
+                border: 1px solid rgba(255,255,255,0.2);
+                background: rgba(255,255,255,0.08);
+                color: #fff;
+            }
+            .add-server button {
+                border: 1px solid rgba(76,175,80,0.55);
+                background: rgba(76,175,80,0.28);
+                color: #fff;
+                border-radius: 8px;
+                padding: 8px 12px;
+                cursor: pointer;
+            }
+            .add-server .note { color: var(--muted); font-size: 0.8rem; }
+            h1 {
+                margin: 0;
+                font-family: 'Arial Black', Arial, sans-serif;
+                font-size: clamp(1.35rem, 3vw, 2.15rem);
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+                background: linear-gradient(90deg, #ff6b35, #f7931e 40%, #4caf50);
+                -webkit-background-clip: text;
+                background-clip: text;
+                color: transparent;
+                filter: drop-shadow(0 0 12px rgba(255, 107, 53, 0.35))
+                        drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.45));
+            }
+            .app-version-badge {
+                display: inline-flex;
+                align-items: center;
+                padding: 3px 10px;
+                border-radius: 999px;
+                font-size: 0.78rem;
+                font-weight: 600;
+                letter-spacing: 0.08em;
+                line-height: 1.3;
+                text-transform: lowercase;
+                color: rgba(255, 255, 255, 0.7);
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.16);
+                flex-shrink: 0;
+            }
+            #grid {
+                display: grid;
+                grid-template-columns: repeat(
+                    auto-fit,
+                    minmax(min(100%, max(260px, calc((100% - 3 * 18px) / 4))), 1fr)
+                );
+                gap: 18px;
+                padding: 24px 32px 40px;
+            }
+            .tile {
+                background: var(--card);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-left: 4px solid rgba(255,255,255,0.2);
+                border-radius: 12px;
+                padding: 20px 18px;
+                min-height: 160px;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+                overflow: hidden;
+            }
+            .tile.playing { border-left-color: var(--green); cursor: pointer; }
+            .tile.paused { border-left-color: var(--amber); cursor: pointer; }
+            .tile.offline { border-left-color: var(--red); opacity: 0.85; }
+            .tile.auth-failed { border-left-color: #ab47bc; opacity: 0.9; }
+            .tile.idle { border-left-color: rgba(255,255,255,0.25); }
+            .tile.checking { border-left-color: rgba(255,255,255,0.35); opacity: 0.92; }
+            .tile.playing:hover, .tile.paused:hover {
+                transform: translateY(-2px);
+                background: rgba(0,0,0,0.7);
+            }
+            .tile-art {
+                position: relative;
+                margin: -20px -18px 4px;
+                aspect-ratio: 16 / 9;
+                height: auto;
+                background: rgba(0,0,0,0.45);
+                overflow: hidden;
+            }
+            .tile-art-bg {
+                position: absolute;
+                inset: 0;
+                background-size: cover;
+                background-position: center;
+                background-repeat: no-repeat;
+            }
+            .tile-art-dim {
+                position: absolute;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.45);
+            }
+            .tile-art img {
+                position: relative;
+                z-index: 1;
+                width: 100%;
+                height: 100%;
+                display: block;
+            }
+            .tile-art img.tile-art-banner {
+                object-fit: contain;
+                object-position: center;
+            }
+            .tile-art img.tile-art-fill {
+                object-fit: cover;
+                object-position: center;
+            }
+            .tile-ip { font-size: 1.15rem; font-weight: 600; letter-spacing: 0.03em; }
+            .tile-host { color: var(--muted); font-size: 0.85rem; word-break: break-all; }
+            .badge {
+                align-self: flex-start;
+                padding: 4px 10px;
+                border-radius: 999px;
+                font-size: 0.75rem;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                background: rgba(255,255,255,0.1);
+            }
+            .badge.playing { background: rgba(76,175,80,0.25); color: #a5d6a7; }
+            .badge.paused { background: rgba(255,179,0,0.22); color: #ffe082; }
+            .badge.idle { background: rgba(255,255,255,0.08); color: var(--muted); }
+            .badge.offline { background: rgba(229,57,53,0.22); color: #ef9a9a; }
+            .badge.auth-failed { background: rgba(171,71,188,0.28); color: #e1bee7; }
+            .badge.checking { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.75); }
+            .tile-meta { color: var(--muted); font-size: 0.85rem; text-transform: capitalize; }
+            .tile-ready { color: #a5d6a7; font-size: 0.75rem; }
+            .tile-status-row {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+                margin-top: auto;
+            }
+            .tile-title {
+                font-size: 1.05rem;
+                line-height: 1.35;
+                flex: 1;
+                min-width: 0;
+            }
+            .tile-retry {
+                flex-shrink: 0;
+                border: 1px solid rgba(255,255,255,0.25);
+                background: rgba(255,255,255,0.08);
+                color: #fff;
+                border-radius: 8px;
+                padding: 6px 10px;
+                font-size: 0.8rem;
+                cursor: pointer;
+            }
+            .tile-retry:hover { background: rgba(76,175,80,0.28); border-color: rgba(76,175,80,0.55); }
+            .tile-retry:disabled {
+                opacity: 0.55;
+                cursor: wait;
+            }
+            .tile-backoff { color: #ef9a9a; font-size: 0.75rem; }
+            .empty, .error-note {
+                grid-column: 1 / -1;
+                color: var(--muted);
+                font-style: italic;
+            }
+            footer {
+                padding: 0 32px 28px;
+                color: var(--muted);
+                font-size: 0.85rem;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <div class="header-title">
+                <h1>Kodi Now Playing Overview</h1>
+                <span class="app-version-badge" title="kodi-np-multi {{ app_version }}">v{{ app_version }}</span>
+            </div>
+            <div class="header-controls">
+                <label class="auto-switch" for="autoSwitchToggle">Auto-switch to playing</label>
+                <label class="toggle">
+                    <input type="checkbox" class="toggle__input" id="autoSwitchToggle">
+                    <span class="toggle-track"><span class="toggle-indicator"></span></span>
+                </label>
+            </div>
+        </header>
+        <div id="grid"><div class="empty">Loading servers…</div></div>
+            <form class="add-server" id="addServerForm">
+                <h2>Add a Kodi host</h2>
+                <div class="add-server-row">
+                    <input name="label" placeholder="Label (optional)" autocomplete="off">
+                    <input name="host" placeholder="http://192.168.0.10:8080" required autocomplete="off">
+                    <input name="username" placeholder="Username" autocomplete="off">
+                    <input name="password" type="password" placeholder="Password" autocomplete="off">
+                    <button type="submit">Add server</button>
+                </div>
+                <div class="note">Env-configured hosts stay in .env. Custom hosts are saved in preferences and apply immediately.</div>
+            </form>
+            <footer id="updated">Loading…</footer>
+        <script>
+            const grid = document.getElementById('grid');
+            const updated = document.getElementById('updated');
+            const autoSwitchToggle = document.getElementById('autoSwitchToggle');
+            const addServerForm = document.getElementById('addServerForm');
+            const REFRESH_MS = 12000;
+            let knownServerIds = [];
+            let refreshInFlight = false;
+            let autoSwitchEnabled = false;
+            let autoSwitchArmed = false;
+            let autoSwitching = false;
+            let latestServers = [];
+            let serverById = {};
+
+            function maybeAutoSwitch(servers) {
+                if (!autoSwitchArmed || !autoSwitchEnabled || autoSwitching) return;
+                const playing = (servers || []).filter(server => server.playing && server.connected && !server.loading);
+                if (!playing.length) return;
+                autoSwitching = true;
+                openServer(playing[0].id, true);
+            }
+
+            async function persistAutoSwitch(enabled) {
+                autoSwitchEnabled = enabled;
+                autoSwitchArmed = enabled;
+                autoSwitchToggle.checked = enabled;
+                localStorage.setItem('autoSwitchPlayingPreference', enabled ? 'enabled' : 'disabled');
+                try {
+                    await fetch('/api/preferences', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({autoSwitchPlayingPreference: enabled ? 'enabled' : 'disabled'})
+                    });
+                } catch (e) {}
+                if (enabled) maybeAutoSwitch(latestServers);
+            }
+
+            async function loadAutoSwitchPref() {
+                let saved = localStorage.getItem('autoSwitchPlayingPreference') === 'enabled';
+                try {
+                    const res = await fetch('/api/preferences');
+                    const prefs = res.ok ? await res.json() : {};
+                    if (prefs.autoSwitchPlayingPreference) {
+                        saved = prefs.autoSwitchPlayingPreference === 'enabled';
+                    }
+                } catch (e) {}
+                autoSwitchToggle.checked = false;
+                autoSwitchEnabled = false;
+                autoSwitchArmed = false;
+                // Returning to overview (or opening it later) must not bounce
+                // back to the playing server. Auto-switch only runs after the
+                // user turns the toggle on during this visit.
+                if (saved) {
+                    localStorage.setItem('autoSwitchPlayingPreference', 'disabled');
+                    try {
+                        await fetch('/api/preferences', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({autoSwitchPlayingPreference: 'disabled'})
+                        });
+                    } catch (e) {}
+                }
+            }
+
+            function isAuthFailed(server) {
+                return !!(server.auth_failed || server.error === 'Authentication failed');
+            }
+
+            function badgeClass(server) {
+                if (server.loading) return 'checking';
+                if (isAuthFailed(server)) return 'auth-failed';
+                if (!server.connected) return 'offline';
+                if (server.playing && server.paused) return 'paused';
+                if (server.playing) return 'playing';
+                return 'idle';
+            }
+
+            function badgeLabel(server) {
+                if (server.loading) return 'Checking…';
+                if (isAuthFailed(server)) return 'Auth failed';
+                if (!server.connected) return 'Offline';
+                if (server.playing && server.paused) return 'Paused';
+                if (server.playing) return 'Playing';
+                return 'Idle';
+            }
+
+            function tileClass(server) {
+                return 'tile ' + badgeClass(server);
+            }
+
+            function formatBackoff(seconds) {
+                const s = Math.max(0, Math.floor(seconds || 0));
+                if (s <= 0) return '';
+                const m = Math.floor(s / 60);
+                const r = s % 60;
+                if (m <= 0) return r + 's';
+                return m + 'm ' + r + 's';
+            }
+
+            function statusTitle(server) {
+                if (server.loading) return 'Checking connection…';
+                if (server.playing) return server.title || 'Playing';
+                if (server.connected) return 'Nothing playing';
+                const backoff = formatBackoff(server.backoff_remaining);
+                if (isAuthFailed(server)) {
+                    return backoff
+                        ? 'Wrong username/password · retry in ' + backoff
+                        : 'Wrong username/password';
+                }
+                if (backoff) return (server.error || 'Connection failed') + ' · retry in ' + backoff;
+                return server.error || 'Unreachable';
+            }
+
+            async function openServer(serverId, playing) {
+                try {
+                    await fetch('/api/switch-server/' + serverId, { method: 'POST' });
+                } catch (e) {}
+                window.location.href = playing ? '/loading' : '/';
+            }
+
+            async function retryServer(serverId, button) {
+                if (button) {
+                    button.disabled = true;
+                    button.textContent = 'Retrying…';
+                }
+                try {
+                    const res = await fetch('/api/retry-server/' + serverId, { method: 'POST' });
+                    const data = await res.json();
+                    if (data && data.server) {
+                        updateServerTile(data.server);
+                        updated.textContent = 'Auto-refresh · updated ' + new Date().toLocaleTimeString();
+                        return;
+                    }
+                } catch (e) {}
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = 'Retry';
+                }
+                await refreshTiles();
+            }
+
+            function serverDisplayName(server) {
+                if (!server) return '';
+                const label = (server.label || '').trim();
+                if (label) return label;
+                return server.ip || server.host || ('Server ' + server.id);
+            }
+
+            function escapeHtml(value) {
+                return String(value || '').replace(/[&<>"']/g, function (char) {
+                    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char];
+                });
+            }
+
+            function tileArtHtml(server) {
+                if (!server.thumb) return '';
+                const alt = escapeHtml(server.title ? 'Artwork for ' + server.title : 'Current artwork');
+                if (server.thumb_is_banner) {
+                    const bg = server.fanart
+                        ? '<div class="tile-art-bg" style="background-image:url(\'' + server.fanart + '\')"></div><div class="tile-art-dim"></div>'
+                        : '';
+                    return '<div class="tile-art">' + bg +
+                        '<img class="tile-art-banner" src="' + server.thumb + '" alt="' + alt + '"></div>';
+                }
+                return '<div class="tile-art"><img class="tile-art-fill" src="' + server.thumb + '" alt="' + alt + '"></div>';
+            }
+
+            function buildTileElement(server) {
+                const tile = document.createElement('div');
+                tile.className = tileClass(server);
+                tile.dataset.serverId = String(server.id);
+                tile.dataset.thumb = server.thumb || '';
+                const name = serverDisplayName(server);
+                const subtitle = server.host || '';
+                const title = statusTitle(server);
+                const needsRetry = !server.loading && (!server.connected || !!server.error || (server.backoff_remaining > 0));
+                const artHtml = tileArtHtml(server);
+                const readyHtml = server.cache_ready
+                    ? '<div class="tile-ready">Ready · instant open</div>'
+                    : '';
+                const retryHtml = needsRetry
+                    ? '<button type="button" class="tile-retry" data-server-id="' + server.id + '">Retry</button>'
+                    : '';
+                const metaHtml = server.media_type && !server.loading
+                    ? '<div class="tile-meta"></div>'
+                    : '';
+                tile.innerHTML =
+                    artHtml +
+                    '<div class="tile-ip"></div>' +
+                    '<div class="tile-host"></div>' +
+                    '<span class="badge ' + badgeClass(server) + '">' + badgeLabel(server) + '</span>' +
+                    '<div class="tile-status-row"><div class="tile-title"></div>' + retryHtml + '</div>' +
+                    metaHtml +
+                    readyHtml;
+                tile.querySelector('.tile-ip').textContent = name;
+                tile.querySelector('.tile-host').textContent = subtitle;
+                tile.querySelector('.tile-title').textContent = title;
+                const meta = tile.querySelector('.tile-meta');
+                if (meta) meta.textContent = server.media_type;
+                const retryBtn = tile.querySelector('.tile-retry');
+                if (retryBtn) {
+                    retryBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        retryServer(server.id, retryBtn);
+                    });
+                }
+                if (server.connected && !server.loading) {
+                    tile.addEventListener('click', () => openServer(server.id, !!server.playing));
+                    tile.title = server.playing
+                        ? (server.cache_ready ? 'Open cached now playing' : 'Open now playing for this server')
+                        : 'Select this server';
+                } else {
+                    tile.title = '';
+                }
+                return tile;
+            }
+
+            function applyServerToTile(tile, server) {
+                tile.className = tileClass(server);
+                tile.dataset.thumb = server.thumb || '';
+
+                const nameEl = tile.querySelector('.tile-ip');
+                const hostEl = tile.querySelector('.tile-host');
+                const badge = tile.querySelector('.badge');
+                const titleEl = tile.querySelector('.tile-title');
+                const meta = tile.querySelector('.tile-meta');
+                let readyEl = tile.querySelector('.tile-ready');
+                const row = tile.querySelector('.tile-status-row');
+
+                if (nameEl) nameEl.textContent = serverDisplayName(server);
+                if (hostEl) hostEl.textContent = server.host || '';
+                if (badge) {
+                    badge.className = 'badge ' + badgeClass(server);
+                    badge.textContent = badgeLabel(server);
+                }
+                if (titleEl) titleEl.textContent = statusTitle(server);
+                if (meta) {
+                    if (server.media_type && !server.loading) {
+                        meta.textContent = server.media_type;
+                        meta.style.display = '';
+                    } else {
+                        meta.style.display = 'none';
+                    }
+                }
+
+                const needsRetry = !server.loading && (!server.connected || !!server.error || (server.backoff_remaining > 0));
+                let retryBtn = tile.querySelector('.tile-retry');
+                if (needsRetry) {
+                    if (!retryBtn && row) {
+                        retryBtn = document.createElement('button');
+                        retryBtn.type = 'button';
+                        retryBtn.className = 'tile-retry';
+                        retryBtn.dataset.serverId = String(server.id);
+                        retryBtn.textContent = 'Retry';
+                        retryBtn.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            retryServer(server.id, retryBtn);
+                        });
+                        row.appendChild(retryBtn);
+                    } else if (retryBtn) {
+                        retryBtn.disabled = false;
+                        retryBtn.textContent = 'Retry';
+                    }
+                } else if (retryBtn) {
+                    retryBtn.remove();
+                }
+
+                if (server.cache_ready) {
+                    if (!readyEl) {
+                        readyEl = document.createElement('div');
+                        readyEl.className = 'tile-ready';
+                        tile.appendChild(readyEl);
+                    }
+                    readyEl.textContent = 'Ready · instant open';
+                } else if (readyEl) {
+                    readyEl.remove();
+                }
+
+                tile.onclick = null;
+                if (server.connected && !server.loading) {
+                    tile.onclick = () => openServer(server.id, !!server.playing);
+                    tile.title = server.playing
+                        ? (server.cache_ready ? 'Open cached now playing' : 'Open now playing for this server')
+                        : 'Select this server';
+                } else {
+                    tile.title = '';
+                }
+            }
+
+            function updateServerTile(server) {
+                serverById[server.id] = server;
+                latestServers = Object.keys(serverById).map(id => serverById[id]);
+                const existing = grid.querySelector('[data-server-id="' + server.id + '"]');
+                const prevThumb = existing ? (existing.dataset.thumb || '') : '';
+                const newThumb = server.thumb || '';
+                if (!existing) {
+                    grid.appendChild(buildTileElement(server));
+                    maybeAutoSwitch(latestServers);
+                    return;
+                }
+                if (prevThumb !== newThumb) {
+                    existing.replaceWith(buildTileElement(server));
+                    maybeAutoSwitch(latestServers);
+                    return;
+                }
+                applyServerToTile(existing, server);
+                maybeAutoSwitch(latestServers);
+            }
+
+            function render(servers) {
+                if (!servers.length) {
+                    grid.innerHTML = '<div class="empty">No Kodi servers configured. Set KODI_HOST_1…N in .env or add a host below.</div>';
+                    return;
+                }
+                grid.innerHTML = '';
+                servers.forEach(server => {
+                    serverById[server.id] = server;
+                    grid.appendChild(buildTileElement(server));
+                });
+                latestServers = servers.slice();
+            }
+
+            async function probeServer(serverId) {
+                try {
+                    const res = await fetch('/api/overview-server/' + serverId);
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    if (data && data.server) {
+                        updateServerTile(data.server);
+                    }
+                } catch (e) {}
+            }
+
+            async function initialLoad() {
+                try {
+                    const res = await fetch('/api/overview');
+                    if (!res.ok) throw new Error('overview failed');
+                    const data = await res.json();
+                    const servers = data.servers || [];
+                    knownServerIds = servers.map(server => server.id);
+                    render(servers);
+                    updated.textContent = 'Checking servers…';
+                    // Probe every tile and let the server decide whether that means a real
+                    // Kodi call: a backed-off host we have reached before answers from cache,
+                    // while one we have never reached is contacted so an unconfirmed
+                    // "offline" does not stick until the backoff expires.
+                    await Promise.all(servers.map(server => probeServer(server.id)));
+                    updated.textContent = 'Auto-refresh every ' + Math.round(REFRESH_MS / 1000) + 's · updated ' + new Date().toLocaleTimeString();
+                    maybeAutoSwitch(latestServers);
+                } catch (e) {
+                    grid.innerHTML = '<div class="error-note">Failed to load overview</div>';
+                    updated.textContent = 'Load failed · retrying…';
+                }
+            }
+
+            async function refreshTiles() {
+                if (refreshInFlight || !knownServerIds.length) return;
+                refreshInFlight = true;
+                try {
+                    const res = await fetch('/api/overview');
+                    if (!res.ok) throw new Error('overview failed');
+                    const data = await res.json();
+                    const servers = data.servers || [];
+                    knownServerIds = servers.map(server => server.id);
+                    servers.forEach(updateServerTile);
+                    updated.textContent = 'Auto-refresh every ' + Math.round(REFRESH_MS / 1000) + 's · updated ' + new Date().toLocaleTimeString();
+                    maybeAutoSwitch(latestServers);
+                } catch (e) {
+                    updated.textContent = 'Refresh failed · will retry…';
+                } finally {
+                    refreshInFlight = false;
+                }
+            }
+
+            if (addServerForm) {
+                addServerForm.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    const form = new FormData(addServerForm);
+                    const payload = {
+                        label: form.get('label') || '',
+                        host: form.get('host') || '',
+                        username: form.get('username') || '',
+                        password: form.get('password') || '',
+                    };
+                    try {
+                        const res = await fetch('/api/servers', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify(payload)
+                        });
+                        const data = await res.json();
+                        if (!res.ok || !data.success) {
+                            updated.textContent = data.error || 'Could not add server';
+                            return;
+                        }
+                        addServerForm.reset();
+                        knownServerIds.push(data.server.id);
+                        updateServerTile(Object.assign({connected: false, loading: true}, data.server));
+                        await probeServer(data.server.id);
+                    } catch (e) {
+                        updated.textContent = 'Could not add server';
+                    }
+                });
+            }
+
+            autoSwitchToggle.addEventListener('change', () => persistAutoSwitch(autoSwitchToggle.checked));
+            window.addEventListener('pageshow', (event) => {
+                if (!event.persisted) return;
+                if (autoSwitchArmed || autoSwitchEnabled || autoSwitchToggle.checked) {
+                    persistAutoSwitch(false);
+                }
+            });
+            loadAutoSwitchPref().then(() => initialLoad());
+            setInterval(refreshTiles, REFRESH_MS);
+            try {
+                if (window.EventSource) {
+                    const source = new EventSource('/api/events?topic=overview');
+                    source.onmessage = function (event) {
+                        try {
+                            const payload = JSON.parse(event.data);
+                            (payload.servers || []).forEach(updateServerTile);
+                        } catch (err) {}
+                    };
+                }
+            } catch (err) {}
+        </script>
+    </body>
+    </html>

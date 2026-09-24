@@ -1,0 +1,1757 @@
+{% autoescape false %}
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Now Playing</title>
+      <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+      <link rel="stylesheet" href="/static/nowplaying-common.css">
+      <script src="/static/nowplaying-common.js"></script>
+      <style>
+        body {
+          font-family: sans-serif;
+          animation: fadeIn 1s;
+          position: relative;
+          margin: 0;
+          padding: 0;
+          opacity: 1;
+          transition: opacity 1.5s ease;
+        }
+        
+        .fanart-container {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          z-index: -1;
+        }
+        
+        .fanart-slide {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background-size: cover;
+          background-position: center;
+          background-repeat: no-repeat;
+          opacity: 0;
+          transition: opacity 2s ease-in-out;
+        }
+        
+        .fanart-slide.active {
+          opacity: 1;
+        }
+        
+        .fanart-slide.fade-out {
+          opacity: 0;
+        }
+        body.fade-out {
+          opacity: 0;
+        }
+        .content.soft-fade {
+          opacity: 0.35;
+        }
+        .content {
+          position: relative;
+          background: rgba(0,0,0,0.5);
+          border-radius: 12px;
+          padding: 80px 40px 40px 40px;
+          backdrop-filter: blur(5px);
+          box-shadow: 0 8px 32px rgba(0,0,0,0.8);
+          color: white;
+          transition: opacity 0.28s ease;
+          text-shadow:
+            -1px -1px 0 rgba(0,0,0,0.95),
+             0   -1px 0 rgba(0,0,0,0.95),
+             1px -1px 0 rgba(0,0,0,0.95),
+            -1px  0   0 rgba(0,0,0,0.95),
+             1px  0   0 rgba(0,0,0,0.95),
+            -1px  1px 0 rgba(0,0,0,0.95),
+             0    1px 0 rgba(0,0,0,0.95),
+             1px  1px 0 rgba(0,0,0,0.95),
+             0    2px 4px rgba(0,0,0,0.9);
+        }
+        .three-column-layout {
+          display: flex;
+          gap: 24px;
+          align-items: flex-start;
+          width: 100%;
+        }
+        .column-left {
+          flex: 0 0 auto;
+        }
+        .column-middle {
+          flex: 1 1 480px;
+          min-width: 280px;
+          max-width: 620px;
+          display: flex;
+          flex-direction: column;
+          gap: 15px;
+        }
+        .column-right {
+          flex: 1 1 520px;
+          min-width: 360px;
+          max-width: 760px;
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+        .album-description {
+          background: rgba(0,0,0,0.3);
+          padding: 15px;
+          border-radius: 8px;
+          border-left: 4px solid #4caf50;
+          font-size: 1.0em;
+          line-height: 1.5;
+          /* Match lyrics panel height so Album/Artist use the same vertical space */
+          height: min(52vh, 420px);
+          max-height: min(52vh, 420px);
+          overflow-y: auto;
+          box-sizing: border-box;
+        }
+        /* Custom Scrollbar Styling */
+        .album-description::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+        .album-description::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 4px;
+          -webkit-box-shadow: inset 0 0 2px rgba(0,0,0,0.1);
+        }
+        .album-description::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.3);
+          border-radius: 4px;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          -webkit-box-shadow: inset 0 0 2px rgba(0,0,0,0.1);
+        }
+        .album-description::-webkit-scrollbar-thumb:hover {
+          background: linear-gradient(180deg, #4caf50 0%, #45a049 100%) !important;
+          border: 1px solid rgba(255, 255, 255, 0.4) !important;
+          -webkit-box-shadow: 0 0 8px rgba(76, 175, 80, 0.6), inset 0 0 2px rgba(0,0,0,0.1) !important;
+        }
+        .album-description::-webkit-scrollbar-thumb:active {
+          background: linear-gradient(180deg, #45a049 0%, #3d8b40 100%) !important;
+        }
+        .album-description::-webkit-scrollbar-corner {
+          background: rgba(255, 255, 255, 0.1);
+        }
+        
+        /* Firefox scrollbar styling */
+        .album-description {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(255, 255, 255, 0.3) rgba(255, 255, 255, 0.1);
+        }
+        
+        /* Firefox hover effect using CSS custom properties */
+        .album-description:hover {
+          scrollbar-color: #4caf50 rgba(255, 255, 255, 0.1);
+        }
+        .poster-container {
+          position: relative;
+          overflow: visible;
+          height: 260px;
+          width: 240px;
+          margin-top: clamp(72px, 11vh, 100px);
+          perspective: 1200px;
+          box-sizing: border-box;
+        }
+        .poster-container.no-discart {
+          margin-top: 0;
+        }
+        .poster-container.no-discart:not(.flip-enabled) {
+          height: 240px;
+        }
+        .poster-container.flip-enabled .album-flip {
+          cursor: pointer;
+        }
+        .poster-container.flip-enabled {
+          padding-top: 20px;
+        }
+        .poster-container:not(.flip-enabled) .poster {
+          margin-top: 20px;
+        }
+        .poster-container.no-discart:not(.flip-enabled) .poster {
+          margin-top: 0;
+        }
+        .poster {
+          height: 240px;
+          width: 240px;
+          border-radius: 8px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+          position: relative;
+          z-index: 2;
+          object-fit: cover;
+          cursor: zoom-in !important;
+        }
+        .poster-container.flip-enabled .poster {
+          position: absolute;
+          top: 0;
+          left: 0;
+          z-index: 2;
+          backface-visibility: hidden;
+        }
+        .poster-container.flip-enabled .poster.back-face {
+          transform: rotateY(180deg);
+        }
+        .album-flip {
+          position: relative;
+          width: 100%;
+          height: 100%;
+          transform-style: preserve-3d;
+          transition: transform 0.8s ease;
+          z-index: 2;
+        }
+        .poster-container.flip-enabled .album-flip {
+          margin-top: 20px;
+        }
+        .poster-container.flip-enabled .album-flip:focus {
+          outline: none;
+          box-shadow: 0 0 0 3px rgba(76,175,80,0.6);
+          border-radius: 8px;
+        }
+        .album-flip.flipped {
+          transform: rotateY(180deg);
+        }
+        .flip-indicator {
+          position: absolute;
+          bottom: 6px;
+          right: 6px;
+          background: rgba(0, 0, 0, 0.55);
+          color: rgba(255, 255, 255, 0.92);
+          font-size: 0.75em;
+          font-family: inherit;
+          line-height: 1.2;
+          padding: 5px 12px;
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          border-radius: 999px;
+          cursor: pointer;
+          pointer-events: auto;
+          opacity: 0;
+          transform: translateY(4px) scale(0.96);
+          transition:
+            opacity 0.25s ease,
+            transform 0.25s ease,
+            background 0.2s ease,
+            border-color 0.2s ease,
+            box-shadow 0.2s ease,
+            color 0.2s ease;
+          z-index: 6;
+          backdrop-filter: blur(6px);
+          -webkit-backdrop-filter: blur(6px);
+        }
+        .poster-container.flip-enabled:hover .flip-indicator,
+        .poster-container.flip-enabled:focus-within .flip-indicator,
+        .flip-indicator:focus-visible {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+        .flip-indicator:hover {
+          background: rgba(255, 255, 255, 0.18);
+          border-color: rgba(255, 255, 255, 0.45);
+          color: #fff;
+          box-shadow:
+            0 0 0 1px rgba(255, 255, 255, 0.12),
+            0 4px 14px rgba(0, 0, 0, 0.35);
+          transform: translateY(-1px) scale(1.06);
+        }
+        .flip-indicator:active {
+          transform: translateY(0) scale(0.98);
+          background: rgba(255, 255, 255, 0.28);
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        .flip-indicator:focus-visible {
+          outline: none;
+          box-shadow:
+            0 0 0 2px rgba(120, 200, 255, 0.85),
+            0 4px 14px rgba(0, 0, 0, 0.35);
+        }
+        .discart-wrapper {
+          position: absolute;
+          top: clamp(-70px, -10vh, -48px);
+          left: 50%;
+          transform: translate(-50%, 0);
+          z-index: 1;
+          height: clamp(140px, 22vh, 200px);
+          width: clamp(140px, 22vh, 200px);
+          pointer-events: none;
+          transition: transform 0.35s ease, opacity 0.35s ease;
+        }
+        .discart {
+          width: clamp(140px, 22vh, 200px);
+          height: clamp(140px, 22vh, 200px);
+          aspect-ratio: 1 / 1;
+          object-fit: cover;
+          border-radius: 50%;
+          animation: spin 6s linear infinite;
+          animation-play-state: running;
+          opacity: 1;
+          filter: drop-shadow(0 0 4px rgba(0,0,0,0.6));
+          pointer-events: none;
+        }
+        .discart-wrapper.retracted {
+          transform: translate(-50%, 60px) scale(0.75);
+          opacity: 0;
+        }
+        .discart-wrapper.retracted .discart {
+          animation-play-state: paused;
+        }
+        .discart.paused {
+          animation-play-state: paused;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to  { transform: rotate(360deg); }
+        }
+        .progress-wrapper {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-top: 6px;
+          width: 100%;
+          max-width: 600px;
+          box-sizing: border-box;
+        }
+        .progress {
+          flex: 1;
+          min-width: 0;
+          background: #2a2a2a;
+          border-radius: 15px;
+          height: 20px;
+          overflow: hidden;
+          border: 1px solid rgba(0,0,0,0.75);
+          box-shadow: 
+            inset 0 1px 0 rgba(255,255,255,0.1),
+            inset 0 0 5px rgba(0,0,0,0.3),
+            0 2px 2px rgba(255,255,255,0.1),
+            inset 0 5px 10px rgba(0,0,0,0.4);
+          position: relative;
+        }
+        .bar {
+          background: linear-gradient(135deg, #4caf50 0%, #45a049 50%, #4caf50 100%);
+          height: 20px;
+          border-radius: 15px 3px 3px 15px;
+          width: 0%;
+          transition: width 0.5s;
+          position: relative;
+          box-shadow: 
+            inset 0 8px 0 rgba(255,255,255,0.2),
+            inset 0 1px 1px rgba(0,0,0,0.125);
+          border-right: 1px solid rgba(0,0,0,0.3);
+        }
+        .small {
+          font-size: 0.9em;
+          color: #ccc;
+        }
+        .badges {
+          display: flex;
+          gap: 8px;
+          margin-top: 10px;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+        .badge {
+          background: #333;
+          color: white;
+          padding: 4px 10px;
+          border-radius: 20px;
+          font-size: 0.8em;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+          text-shadow: none;
+        }
+        .badge-imdb {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          background: #f5c518;
+          color: black;
+          padding: 4px 10px;
+          border-radius: 20px;
+          font-size: 0.8em;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+          text-decoration: none;
+          font-weight: bold;
+          text-shadow: none !important;
+        }
+        .badge-imdb img {
+          height: 14px;
+        }
+        
+        #playback-button {
+          display: inline-block !important;
+          vertical-align: middle;
+          margin-right: 4px;
+        }
+        .banner {
+          display: block;
+          margin-bottom: 10px;
+          max-width: 360px;
+          width: auto;
+          height: auto;
+          object-fit: contain;
+        }
+        .logo {
+          display: block;
+          margin-bottom: 10px;
+          height: 150px;
+          width: auto;
+          object-fit: contain;
+          object-position: left center;
+          text-align: left;
+        }
+        .clearart {
+          display: block;
+          margin-top: 10px;
+          max-height: 80px;
+        }
+        .music-info {
+          margin-bottom: 20px;
+        }
+        .track-title {
+          font-size: 1.8em;
+          font-weight: bold;
+          margin-bottom: 5px;
+          color: #4caf50;
+          text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+          letter-spacing: 0.5px;
+          display: inline;
+        }
+        .track-number {
+          font-weight: bold;
+          color: #4caf50;
+          text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+          letter-spacing: 0.5px;
+          margin-right: 8px;
+        }
+        .music-badges {
+          display: flex;
+          gap: 10px;
+          margin: 10px 0;
+          flex-wrap: wrap;
+        }
+        .music-badge {
+          background: #4caf50;
+          color: white;
+          padding: 8px 15px;
+          border-radius: 25px;
+          font-size: 1.0em;
+          font-weight: bold;
+          box-shadow: 0 3px 8px rgba(0,0,0,0.4);
+          text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+        }
+        .album-title {
+          font-size: 1.2em;
+          font-weight: bold;
+          margin-bottom: 10px;
+          color: #ccc;
+        }
+        {% include "partials/_marquee.css.html" %}
+        .content {
+          margin-top: 100px;
+          transition: margin-top 0.5s ease-in-out;
+        }
+        .marquee {
+          transition: transform 0.5s ease-in-out;
+        }
+        .marquee.hidden {
+          transform: translateY(-100%);
+        }
+        .content.no-marquee {
+          margin-top: 20px;
+        }
+        
+        /* Blur Toggle Button */
+        .blur-toggle {
+          position: absolute;
+          top: 15px;
+          right: 15px;
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          background: rgba(0,0,0,0.6);
+          border: 1px solid rgba(255,255,255,0.2);
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.3s ease;
+          box-shadow: 0 0 10px rgba(255,255,255,0.1);
+          animation: subtleGlow 3s ease-in-out infinite;
+          z-index: 10;
+        }
+        
+        .blur-toggle:hover {
+          transform: scale(1.1);
+          box-shadow: 0 0 15px rgba(255,255,255,0.3);
+          background: rgba(0,0,0,0.8);
+        }
+        
+        .blur-toggle:active {
+          transform: scale(0.95);
+        }
+        
+        .blur-toggle svg {
+          width: 20px;
+          height: 20px;
+          fill: rgba(255,255,255,0.8);
+          transition: fill 0.3s ease;
+        }
+        
+        .blur-toggle:hover svg {
+          fill: rgba(255,255,255,1);
+        }
+        
+        @keyframes subtleGlow {
+          0%, 100% { box-shadow: 0 0 10px rgba(255,255,255,0.1); }
+          50% { box-shadow: 0 0 15px rgba(255,255,255,0.2); }
+        }
+        
+        /* Blur state classes */
+        .content.blurred {
+          backdrop-filter: blur(5px);
+        }
+        
+        .content.non-blurred {
+          backdrop-filter: none;
+        }
+        
+        /* Side Panel Styles */
+        .side-panel {
+          position: fixed;
+          top: 0;
+          right: -530px;
+          width: 530px;
+          max-width: calc(100vw - 40px);
+          height: 100vh;
+          background: rgba(0, 0, 0, 0.85);
+          backdrop-filter: blur(10px);
+          z-index: 1500;
+          transition: right 0.5s ease-in-out;
+          overflow: visible;
+          padding: 12px;
+          box-shadow: -5px 0 20px rgba(0, 0, 0, 0.5);
+          box-sizing: border-box;
+        }
+        
+        .side-panel.open {
+          right: 0;
+        }
+        
+        .side-panel-toggle {
+          position: absolute;
+          left: -20px;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 20px;
+          height: 40px;
+          background: rgba(0, 0, 0, 0.85);
+          backdrop-filter: blur(10px);
+          border-radius: 20px 0 0 20px;
+          margin-right: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          z-index: 1501;
+          transition: all 0.3s ease;
+          box-shadow: -2px 0 10px rgba(0, 0, 0, 0.3);
+        }
+        
+        .side-panel-toggle-arrow {
+          color: rgba(255, 255, 255, 0.8);
+          font-size: 14px;
+          font-weight: bold;
+          transition: transform 0.3s ease;
+          margin-left: 2px;
+        }
+        
+        .side-panel h2 {
+          color: white;
+          margin: 0 0 20px 0;
+          font-size: 1.5em;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        
+        .side-panel select {
+          background: rgba(255, 255, 255, 0.1);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          color: white;
+          padding: 8px 12px;
+          border-radius: 5px;
+          font-size: 14px;
+          cursor: pointer;
+          min-width: 150px;
+        }
+        
+        .side-panel select option {
+          background: white;
+          color: black;
+        }
+        
+        .side-panel select:focus {
+          outline: 2px solid #4caf50;
+          outline-offset: 2px;
+          position: relative;
+          z-index: 1;
+        }
+        
+        {% include "partials/_side_panel_sections.css.html" %}
+        
+        /* Toggle Component Styles */
+        {% include "partials/_side_panel_controls.css.html" %}
+        {% include "partials/_side_panel_dropdown.css.html" %}
+
+        /* Poster Zoom Overlay */
+        .poster-zoom-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.85);
+          display: none;
+          align-items: center;
+          justify-content: center;
+          z-index: 2000;
+        }
+        .poster-zoom-overlay.visible {
+          display: flex;
+        }
+        .poster-zoom-image {
+          max-width: 80vw;
+          max-height: 80vh;
+          border-radius: 10px;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.9);
+          transform: scale(0.7);
+          opacity: 0;
+          transition: transform 0.25s ease-out, opacity 0.25s ease-out;
+        }
+        .poster-zoom-overlay.visible .poster-zoom-image {
+          transform: scale(1);
+          opacity: 1;
+        }
+        .poster-zoom-overlay img {
+          object-fit: contain;
+        }
+      </style>
+      <script type="application/json" id="np-bootstrap">{"elapsed":{{ elapsed }},"duration":{{ duration }},"paused":{{ paused_js }},"percent":{{ percent }},"identity":{{ soft_identity_json|safe }}}</script>
+      <script>
+        const __np = JSON.parse(document.getElementById('np-bootstrap').textContent);
+        let elapsed = __np.elapsed;
+        let duration = __np.duration;
+        let paused = __np.paused;
+        window.getNowPlayingElapsed = function () { return elapsed; };
+        window.getNowPlayingPaused = function () { return !!paused; };
+        let lastPlaybackState = null;
+        let noPlayCount = 0;
+        let softUpdateInFlight = false;
+        let redirectingToIdle = false;
+        let playbackPollInFlight = false;
+        let playbackPollTimer = null;
+        window.SOFT_IDENTITY = __np.identity || {};
+        {% include "partials/_playback_config.js.html" %}
+
+        function updateTime() {
+          if (!paused && elapsed < duration) {
+            elapsed++;
+            let percent = Math.floor((elapsed / duration) * 100);
+            document.querySelector('.bar').style.width = percent + '%';
+            
+            // Format time based on duration
+            let elapsedTime, totalTime;
+            
+            if (duration < 3600) {
+              // Less than 1 hour: show mm:ss
+              let elapsedMinutes = Math.floor(elapsed / 60);
+              let elapsedSeconds = elapsed % 60;
+              elapsedTime = elapsedMinutes.toString().padStart(2, '0') + ':' + elapsedSeconds.toString().padStart(2, '0');
+              
+              let totalMinutes = Math.floor(duration / 60);
+              let totalSeconds = duration % 60;
+              totalTime = totalMinutes.toString().padStart(2, '0') + ':' + totalSeconds.toString().padStart(2, '0');
+            } else {
+              // 1 hour or more: show hh:mm:ss
+              let hours = Math.floor(elapsed / 3600);
+              let minutes = Math.floor((elapsed % 3600) / 60);
+              let seconds = elapsed % 60;
+              elapsedTime = hours.toString().padStart(2, '0') + ':' + minutes.toString().padStart(2, '0') + ':' + seconds.toString().padStart(2, '0');
+              
+              let totalHours = Math.floor(duration / 3600);
+              let totalMinutes = Math.floor((duration % 3600) / 60);
+              let totalSeconds = duration % 60;
+              totalTime = totalHours.toString().padStart(2, '0') + ':' + totalMinutes.toString().padStart(2, '0') + ':' + totalSeconds.toString().padStart(2, '0');
+            }
+            
+            // Update timer text, preserving the button
+            const timeDisplay = document.getElementById('time-display');
+            const button = timeDisplay.querySelector('#playback-button');
+            const timeText = elapsedTime + ' / ' + totalTime;
+            
+            if (button) {
+              // If button exists, find or create a text node after the button
+              let textNode = button.nextSibling;
+              
+              // Check if next sibling is a text node
+              if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+                // Update existing text node
+                textNode.textContent = ' ' + timeText;
+              } else {
+                // Remove any non-text nodes after the button
+                while (textNode && textNode.id !== 'playback-button') {
+                  const next = textNode.nextSibling;
+                  if (textNode.nodeType !== Node.TEXT_NODE) {
+                    timeDisplay.removeChild(textNode);
+                  }
+                  textNode = next;
+                }
+                
+                // Create and append new text node after button
+                textNode = document.createTextNode(' ' + timeText);
+                timeDisplay.appendChild(textNode);
+              }
+            } else {
+              // If no button, just update text
+              timeDisplay.textContent = timeText;
+            }
+          }
+        }
+
+        function resyncTime() {
+          fetch('/nowplaying?json=1')
+            .then(res => res.json())
+            .then(data => {
+              elapsed = data.elapsed;
+              duration = data.duration;
+              paused = data.paused;
+            });
+        }
+
+        let lastItemId = (window.SOFT_IDENTITY && window.SOFT_IDENTITY.item_id) || null;
+        let lastPausedState = null;
+        let cachedButton = null;
+        
+        {% include "partials/_playback_button.js.html" %}
+
+        function updatePlaybackButton(paused) {
+          const button = getOrCreateButton();
+          console.log(`[DEBUG] updatePlaybackButton called: paused=${paused}, button found=${!!button}`);
+          if (button) {
+            console.log(`[DEBUG] Button current src: ${button.src}`);
+            
+            // Determine new image source
+            const newSrc = paused ? '/pause-button.png' : '/play-button.png';
+            const newAlt = paused ? 'Pause' : 'Play';
+            
+            // If the image is already correct, no need to change
+            if (button.src.endsWith(newSrc.split('/').pop())) {
+              console.log('[DEBUG] Button image already correct, no change needed');
+              // Still update discart animation even if button doesn't change
+              updateDiscartAnimation(paused);
+              return;
+            }
+            
+            // Fade out → change image → fade in
+            button.style.opacity = '0';
+            
+            setTimeout(() => {
+              button.src = newSrc;
+              button.alt = newAlt;
+              console.log(`[DEBUG] Button new src: ${button.src}`);
+              
+              // Fade back in
+              setTimeout(() => {
+                button.style.opacity = '1';
+              }, 50); // Small delay to ensure image loads
+            }, 250); // Half of transition duration for smooth effect
+            
+            // Ensure button is visible
+            button.style.display = 'inline-block';
+          } else {
+            console.log('[ERROR] Could not get or create playback button!');
+          }
+          
+          // Update discart animation based on playback state
+          updateDiscartAnimation(paused);
+        }
+        
+        function updateDiscartAnimation(paused) {
+          const discart = document.querySelector('.discart');
+          if (discart) {
+            if (paused) {
+              discart.classList.add('paused');
+              console.log('[DEBUG] Discart animation paused');
+            } else {
+              discart.classList.remove('paused');
+              console.log('[DEBUG] Discart animation resumed');
+            }
+          }
+        }
+        
+        function checkPlaybackChange() {
+          if (playbackPollInFlight || redirectingToIdle) return;
+          playbackPollInFlight = true;
+          fetch('/poll_playback')
+            .then(res => {
+              if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+              }
+              return res.json();
+            })
+            .then(data => {
+              const isPlaying = data.playing === true;
+              const isNotPlaying = data.playing === false;
+              const currentState = isPlaying;
+              const currentItemId = data.item_id;
+              const currentPaused = data.paused;
+              const isError = data.error === true;
+
+              if (isError || data.error_idle === true) {
+                console.log('[DEBUG] Poll playback error flagged, skipping state changes');
+                return;
+              }
+
+              if (!isPlaying && !isNotPlaying) {
+                return;
+              }
+
+              if (data.transient_idle) {
+                console.log('[DEBUG] Transient idle (server debouncing stop)');
+                return;
+              }
+
+              if (isPlaying) {
+                noPlayCount = 0;
+                redirectingToIdle = false;
+              } else if (isNotPlaying && !redirectingToIdle) {
+                redirectingToIdle = true;
+                console.log('[DEBUG] Redirecting to idle — playback stopped');
+                document.body.classList.add('fade-out');
+                setTimeout(() => {
+                  window.location.href = '/';
+                }, 1500);
+                return;
+              }
+              
+              // Update playback button based on pause state
+              if (currentPaused !== lastPausedState) {
+                updatePlaybackButton(currentPaused);
+                lastPausedState = currentPaused;
+              }
+              
+              if (lastPlaybackState === null) {
+                lastPlaybackState = currentState;
+                if (currentItemId) lastItemId = currentItemId;
+                lastPausedState = currentPaused;
+                updatePlaybackButton(currentPaused);
+              } else {
+                // Detect item changes whenever playing — including after a brief stop.
+                // Keep lastItemId while idle so resume with a different track is not missed.
+                const knownItemId = lastItemId || ((window.SOFT_IDENTITY && window.SOFT_IDENTITY.item_id) || null);
+                if (isPlaying && currentItemId && knownItemId && currentItemId !== knownItemId) {
+                  console.log(`[DEBUG] Item changed from ${knownItemId} to ${currentItemId}`);
+                  attemptSoftUpdate(currentItemId);
+                  lastItemId = currentItemId;
+                } else if (isPlaying && currentItemId) {
+                  lastItemId = currentItemId;
+                }
+                lastPlaybackState = currentState;
+              }
+            })
+            .catch(error => {
+              console.error('Polling error:', error);
+            })
+            .finally(() => {
+              playbackPollInFlight = false;
+            });
+        }
+
+        function hardReloadNowPlaying() {
+          redirectingToIdle = true; // stop further poll actions while navigating
+          document.body.classList.add('fade-out');
+          setTimeout(() => {
+            window.location.href = '/loading';
+          }, 800);
+        }
+
+        function setMusicBadge(id, text) {
+          const el = document.getElementById(id);
+          if (!el) return;
+          if (text) {
+            el.textContent = text;
+            el.style.display = '';
+          } else {
+            el.textContent = '';
+            el.style.display = 'none';
+          }
+        }
+
+        function setSoftBlock(wrapId, textId, text) {
+          const wrap = document.getElementById(wrapId);
+          const textEl = textId ? document.getElementById(textId) : null;
+          if (!wrap) return;
+          if (text) {
+            if (textEl) textEl.textContent = text;
+            wrap.style.display = '';
+          } else if (text === '') {
+            if (textEl) textEl.textContent = '';
+            wrap.style.display = 'none';
+          }
+        }
+
+        function applyMusicSoftUpdate(data) {
+          const content = document.querySelector('.content') || document.body;
+          content.classList.add('soft-fade');
+          setTimeout(() => {
+            setMusicBadge('soft-badge-album', (data.badges && data.badges.album) || '');
+            setMusicBadge('soft-badge-disc', (data.badges && data.badges.disc) || '');
+            setMusicBadge('soft-badge-track', (data.badges && data.badges.track) || '');
+            setMusicBadge('soft-badge-title', (data.badges && data.badges.title) || '');
+
+            if (data.album_changed || data.refresh_album_text) {
+              const albumWrap = document.getElementById('soft-album-description');
+              const albumText = document.getElementById('soft-album-description-text');
+              if (albumWrap && albumText) {
+                const desc = (data.album_description || '').trim();
+                if (desc) {
+                  albumText.textContent = desc;
+                  albumText.classList.remove('info-panel-empty');
+                  albumWrap.style.display = '';
+                } else if (data.album_changed) {
+                  albumText.textContent = 'No album description available.';
+                  albumText.classList.add('info-panel-empty');
+                  albumWrap.style.display = '';
+                }
+              }
+              if (data.album_changed && data.art && data.art.cover) {
+                const artWrap = document.getElementById('soft-album-art');
+                if (artWrap) {
+                  let front = artWrap.querySelector('img.front-face') || artWrap.querySelector('img.poster') || artWrap.querySelector('img');
+                  if (front) {
+                    front.src = data.art.cover;
+                    front.style.display = '';
+                  } else {
+                    artWrap.innerHTML = "<img class='poster' src='" + data.art.cover + "' alt='Album front cover' />";
+                  }
+                  if (data.art.back) {
+                    const back = artWrap.querySelector('img.back-face');
+                    if (back) back.src = data.art.back;
+                  }
+                }
+              }
+              if (data.album_changed && data.art && data.art.discart) {
+                const discWrap = document.getElementById('soft-discart');
+                if (discWrap) {
+                  let img = discWrap.querySelector('img');
+                  if (img) {
+                    img.src = data.art.discart;
+                    img.style.display = '';
+                  } else {
+                    discWrap.innerHTML = "<img class='discart' src='" + data.art.discart + "' alt='Disc art' />";
+                  }
+                }
+              }
+            }
+
+            if (data.artist_changed || data.refresh_artist_text) {
+              const bioWrap = document.getElementById('soft-artist-bio');
+              const bioText = document.getElementById('soft-artist-bio-text');
+              if (bioWrap && bioText) {
+                if (data.artist_bio) {
+                  bioText.textContent = data.artist_bio;
+                  bioText.classList.remove('info-panel-empty');
+                  bioWrap.style.display = '';
+                  const bornEl = document.getElementById('soft-artist-born');
+                  if (bornEl && data.artist_born) {
+                    bornEl.innerHTML = '<strong>Born:</strong> ' + data.artist_born;
+                  } else if (!bornEl && data.artist_born) {
+                    const p = document.createElement('p');
+                    p.id = 'soft-artist-born';
+                    p.innerHTML = '<strong>Born:</strong> ' + data.artist_born;
+                    bioWrap.insertBefore(p, bioText);
+                  }
+                } else if (data.artist_changed) {
+                  bioText.textContent = 'No artist biography available.';
+                  bioText.classList.add('info-panel-empty');
+                  bioWrap.style.display = '';
+                }
+              }
+              if (data.artist_changed && data.art && data.art.clearlogo) {
+                const logo = document.querySelector('.logo');
+                if (logo) logo.src = data.art.clearlogo;
+              }
+              if (data.artist_changed && data.art && typeof window.replaceFanartSlideshow === 'function') {
+                window.replaceFanartSlideshow(
+                  data.art.fanart_slides || [],
+                  data.art.fanart_pending || {session_id: '', items: []}
+                );
+              }
+            }
+
+            if (typeof data.elapsed === 'number' && typeof data.duration === 'number') {
+              const bar = document.querySelector('.progress .bar') || document.querySelector('.bar');
+              const timeDisplay = document.getElementById('time-display');
+              const pct = data.duration > 0 ? Math.min(100, (data.elapsed / data.duration) * 100) : 0;
+              if (bar) bar.style.width = pct + '%';
+              if (typeof elapsed !== 'undefined') elapsed = data.elapsed;
+              if (typeof duration !== 'undefined') duration = data.duration;
+              if (typeof paused !== 'undefined') paused = !!data.paused;
+              if (timeDisplay) {
+                const btn = timeDisplay.querySelector('#playback-button');
+                const btnHtml = btn ? btn.outerHTML : '';
+                const fmt = (s) => {
+                  s = Math.max(0, Math.floor(s || 0));
+                  const h = Math.floor(s / 3600);
+                  const m = Math.floor((s % 3600) / 60);
+                  const sec = s % 60;
+                  if (h > 0) return h + ':' + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+                  return String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+                };
+                timeDisplay.innerHTML = btnHtml + ' ' + fmt(data.elapsed) + ' / ' + fmt(data.duration);
+              }
+            }
+
+            if (data.identity) {
+              window.SOFT_IDENTITY = data.identity;
+            }
+            if (data.item_id) {
+              lastItemId = data.item_id;
+            }
+            if (window.NowPlayingRuntime && typeof NowPlayingRuntime.applyUpNextLabel === 'function') {
+              NowPlayingRuntime.applyUpNextLabel(data.up_next_label);
+            }
+            if (typeof window.reloadNowPlayingLyrics === 'function') {
+              window.reloadNowPlayingLyrics(data.lyrics || {
+                artist: data.artist || '',
+                title: data.title || '',
+                album: data.album || '',
+                duration: data.duration,
+                kodi_lyrics: ''
+              });
+            }
+            if (typeof window.reloadMusicMetaFallback === 'function' && (data.need_album_meta || data.need_artist_meta)) {
+              window.reloadMusicMetaFallback({
+                artist: data.artist || '',
+                album: data.album || '',
+                album_id: data.album_id,
+                artist_id: data.artist_id,
+                need_album: !!data.need_album_meta,
+                need_artist: !!data.need_artist_meta
+              });
+            }
+            content.classList.remove('soft-fade');
+          }, 280);
+        }
+
+        function attemptSoftUpdate(newItemId) {
+          if (softUpdateInFlight) return;
+          softUpdateInFlight = true;
+          const id = window.SOFT_IDENTITY || {};
+          const params = new URLSearchParams({
+            prev_type: id.media_type || 'song',
+            prev_item_id: id.item_id || lastItemId || '',
+            prev_tvshow_id: '',
+            prev_season: '',
+            prev_album_id: id.album_id != null ? String(id.album_id) : '',
+            prev_artist_id: id.artist_id != null ? String(id.artist_id) : '',
+          });
+          fetch('/api/nowplaying-soft-update?' + params.toString())
+            .then((res) => res.json())
+            .then((data) => {
+              if (data && data.soft) {
+                console.log('[DEBUG] Soft-updating song in place', data.item_id || newItemId);
+                applyMusicSoftUpdate(data);
+              } else {
+                console.log('[DEBUG] Soft update not eligible, hard reload', data && data.reason);
+                hardReloadNowPlaying();
+              }
+            })
+            .catch((err) => {
+              console.error('Soft update failed, hard reload', err);
+              hardReloadNowPlaying();
+            })
+            .finally(() => {
+              softUpdateInFlight = false;
+            });
+        }
+
+        {% include "partials/_playback_polling.js.html" %}
+
+        // Fanart slideshow functionality - wait for DOM to be ready
+        setTimeout(function() {
+          let currentFanartIndex = 0;
+
+          function cycleFanarts() {
+            const fanartSlides = document.querySelectorAll('.fanart-slide');
+            const totalFanarts = fanartSlides.length;
+            if (totalFanarts <= 1) return;
+
+            const currentSlide = fanartSlides[currentFanartIndex % totalFanarts];
+            if (currentSlide) {
+              currentSlide.classList.remove('active');
+              currentSlide.classList.add('fade-out');
+            }
+
+            currentFanartIndex = (currentFanartIndex + 1) % totalFanarts;
+
+            const nextSlide = fanartSlides[currentFanartIndex];
+            if (nextSlide) {
+              nextSlide.classList.remove('fade-out');
+              nextSlide.classList.add('active');
+            }
+          }
+
+          window.cycleFanarts = cycleFanarts;
+          const initialCount = document.querySelectorAll('.fanart-slide').length;
+          if (initialCount > 1) {
+            const savedFanartInterval = localStorage.getItem('fanartInterval') || '20';
+            fanartInterval = setInterval(cycleFanarts, parseInt(savedFanartInterval) * 1000);
+            window._fanartSlideshowTimer = fanartInterval;
+            window._fanartSlideshowStarted = true;
+          }
+        }, 100); // Wait 100ms for DOM to be ready
+        
+        // Preference Management Functions (Server-side storage with localStorage fallback)
+        async function loadPreferences() {
+          try {
+            const response = await fetch('/api/preferences');
+            if (response.ok) {
+              const prefs = await response.json();
+              const pick = (key, fallback) =>
+                Object.prototype.hasOwnProperty.call(prefs, key) && prefs[key] != null && prefs[key] !== ''
+                  ? String(prefs[key])
+                  : (localStorage.getItem(key) || fallback);
+              // Server wins when key exists (including "disabled"); localStorage only fills gaps
+              return {
+                blurPreference: pick('blurPreference', 'blurred'),
+                blurAmount: pick('blurAmount', '50'),
+                overlayPreference: pick('overlayPreference', 'enabled'),
+                overlayOpacity: pick('overlayOpacity', '85'),
+                marqueeInterval: pick('marqueeInterval', '10'),
+                fanartInterval: pick('fanartInterval', '20'),
+                fanartMinSizeKB: pick('fanartMinSizeKB', '200'),
+                _server: prefs
+              };
+            }
+          } catch (error) {
+            console.log('[DEBUG] Failed to load preferences from server, using localStorage:', error);
+          }
+          // Fallback to localStorage
+          return {
+            blurPreference: localStorage.getItem('blurPreference') || 'blurred',
+            blurAmount: localStorage.getItem('blurAmount') || '50',
+            overlayPreference: localStorage.getItem('overlayPreference') || 'enabled',
+            overlayOpacity: localStorage.getItem('overlayOpacity') || '85',
+            marqueeInterval: localStorage.getItem('marqueeInterval') || '10',
+            fanartInterval: localStorage.getItem('fanartInterval') || '20',
+            fanartMinSizeKB: localStorage.getItem('fanartMinSizeKB') || '200'
+          };
+        }
+        
+        {% include "partials/_save_preference.js.html" %}
+        function toggleOverlay() {
+          const content = document.querySelector('.content');
+          const overlayToggle = document.getElementById('overlayToggle');
+          const opacitySliderContainer = document.getElementById('opacitySliderContainer');
+          const isEnabled = overlayToggle.checked;
+          
+          if (isEnabled) {
+            // Enable overlay - apply saved opacity
+            const savedOpacity = parseInt(localStorage.getItem('overlayOpacity') || '85');
+            const opacity = savedOpacity / 100;
+            content.style.backgroundColor = `rgba(0, 0, 0, ${opacity * 0.85})`;
+            content.style.boxShadow = '0 8px 32px rgba(0,0,0,0.8)';
+            opacitySliderContainer.style.display = 'block';
+            savePreference('overlayPreference', 'enabled');
+          } else {
+            // Disable overlay - hide it
+            content.style.backgroundColor = 'rgba(0, 0, 0, 0)';
+            content.style.boxShadow = 'none';
+            opacitySliderContainer.style.display = 'none';
+            savePreference('overlayPreference', 'disabled');
+          }
+        }
+        
+        function updateOverlayOpacity(value) {
+          const content = document.querySelector('.content');
+          const overlayToggle = document.getElementById('overlayToggle');
+          const opacityValue = parseInt(value);
+          document.getElementById('opacityValue').textContent = opacityValue + '%';
+          
+          // Only apply opacity if overlay toggle is enabled
+          if (overlayToggle.checked) {
+            const opacity = opacityValue / 100;
+            content.style.backgroundColor = `rgba(0, 0, 0, ${opacity * 0.85})`;
+            content.style.boxShadow = '0 8px 32px rgba(0,0,0,0.8)';
+          } else {
+            // Remove all overlay effects if toggle is disabled
+            content.style.backgroundColor = 'rgba(0, 0, 0, 0)';
+            content.style.boxShadow = 'none';
+          }
+          
+          savePreference('overlayOpacity', opacityValue.toString());
+        }
+        
+        function updateMarqueeInterval(value, persist = true) {
+          const intervalValue = parseInt(value);
+          document.getElementById('marqueeIntervalValue').textContent = intervalValue + 's';
+          
+          if (shimmerInterval) {
+            clearInterval(shimmerInterval);
+          }
+          
+          shimmerInterval = setInterval(() => {
+            const marqueeText = document.querySelector('.marquee-text');
+            if (marqueeText && !marqueeText.classList.contains('hidden')) {
+              marqueeText.classList.remove('shimmer');
+              const letters = marqueeText.querySelectorAll('.letter');
+              letters.forEach(letter => {
+                letter.style.animation = 'none';
+              });
+              marqueeText.offsetHeight;
+              letters.forEach(letter => {
+                letter.style.animation = '';
+              });
+              marqueeText.classList.add('shimmer');
+              setTimeout(() => {
+                marqueeText.classList.remove('shimmer');
+              }, 2000);
+            }
+          }, intervalValue * 1000);
+          
+          if (persist) {
+            savePreference('marqueeInterval', intervalValue.toString());
+          }
+        }
+        
+        function updateFanartInterval(value, persist = true) {
+          const intervalValue = parseInt(value);
+          document.getElementById('fanartIntervalValue').textContent = intervalValue + 's';
+          
+          if (fanartInterval) {
+            clearInterval(fanartInterval);
+          }
+          
+          if (typeof cycleFanarts === 'function') {
+            fanartInterval = setInterval(cycleFanarts, intervalValue * 1000);
+          }
+          
+          if (persist) {
+            savePreference('fanartInterval', intervalValue.toString());
+          }
+        }
+
+        function updateFanartMinSize(value, persist = true) {
+          const sizeValue = parseInt(value);
+          document.getElementById('fanartMinSizeValue').textContent = sizeValue + 'kB';
+          if (persist) {
+            savePreference('fanartMinSizeKB', sizeValue.toString());
+          }
+        }
+        
+        async function initializeBlurToggle() {
+          const content = document.querySelector('.content');
+          const blurToggle = document.getElementById('blurToggle');
+          const overlayToggle = document.getElementById('overlayToggle');
+          const blurSliderContainer = document.getElementById('blurSliderContainer');
+          const opacitySliderContainer = document.getElementById('opacitySliderContainer');
+          
+          // Load preferences from server (with localStorage fallback)
+          const prefs = await loadPreferences();
+          const serverPrefs = prefs._server || {};
+          const savedBlurPreference = prefs.blurPreference;
+          const savedOverlayPreference = prefs.overlayPreference;
+          const savedBlurAmount = prefs.blurAmount;
+          const savedOpacity = prefs.overlayOpacity;
+          const savedMarqueeInterval = prefs.marqueeInterval;
+          const savedFanartInterval = prefs.fanartInterval;
+          const savedFanartMinSize = prefs.fanartMinSizeKB;
+          
+          // Initialize blur toggle
+          if (savedBlurPreference === 'blurred') {
+            blurToggle.checked = true;
+            content.style.backdropFilter = `blur(${parseInt(savedBlurAmount) / 10}px)`;
+            content.style.webkitBackdropFilter = `blur(${parseInt(savedBlurAmount) / 10}px)`;
+            blurSliderContainer.style.display = 'block';
+          } else {
+            blurToggle.checked = false;
+            content.style.backdropFilter = 'none';
+            content.style.webkitBackdropFilter = 'none';
+            blurSliderContainer.style.display = 'none';
+          }
+          
+          // Set blur slider value
+          if (document.getElementById('blurSlider')) {
+            document.getElementById('blurSlider').value = savedBlurAmount;
+            document.getElementById('blurValue').textContent = savedBlurAmount + '%';
+          }
+
+          // Sync missing prefs to server in one request (avoid concurrent POST races)
+          const missing = {};
+          const prefKeys = [
+            ['blurPreference', savedBlurPreference],
+            ['blurAmount', savedBlurAmount],
+            ['overlayPreference', savedOverlayPreference],
+            ['overlayOpacity', savedOpacity],
+            ['marqueeInterval', savedMarqueeInterval],
+            ['fanartInterval', savedFanartInterval],
+            ['fanartMinSizeKB', savedFanartMinSize]
+          ];
+          prefKeys.forEach(([key, value]) => {
+            if (!Object.prototype.hasOwnProperty.call(serverPrefs, key)) {
+              missing[key] = value;
+            }
+          });
+          if (Object.keys(missing).length) {
+            savePreferencesBatch(missing);
+          }
+          
+          // Initialize overlay toggle
+          if (savedOverlayPreference === 'enabled') {
+            overlayToggle.checked = true;
+            const opacity = parseInt(savedOpacity) / 100;
+            content.style.backgroundColor = `rgba(0, 0, 0, ${opacity * 0.85})`;
+            content.style.boxShadow = '0 8px 32px rgba(0,0,0,0.8)';
+            opacitySliderContainer.style.display = 'block';
+          } else {
+            overlayToggle.checked = false;
+            content.style.backgroundColor = 'rgba(0, 0, 0, 0)';
+            content.style.boxShadow = 'none';
+            opacitySliderContainer.style.display = 'none';
+          }
+          
+          // Set opacity slider value
+          if (document.getElementById('opacitySlider')) {
+            document.getElementById('opacitySlider').value = savedOpacity;
+            document.getElementById('opacityValue').textContent = savedOpacity + '%';
+          }
+          
+          // Initialize intervals (persist=false so page load does not rewrite preferences)
+          if (document.getElementById('marqueeIntervalSlider')) {
+            updateMarqueeInterval(savedMarqueeInterval, false);
+            document.getElementById('marqueeIntervalSlider').value = savedMarqueeInterval;
+          }
+          
+          if (document.getElementById('fanartIntervalSlider')) {
+            updateFanartInterval(savedFanartInterval, false);
+            document.getElementById('fanartIntervalSlider').value = savedFanartInterval;
+          }
+
+          if (document.getElementById('fanartMinSizeSlider')) {
+            updateFanartMinSize(savedFanartMinSize, false);
+            document.getElementById('fanartMinSizeSlider').value = savedFanartMinSize;
+          }
+        }
+
+        // Initialize button immediately and on DOM ready
+        function initializeButton() {
+          console.log('[DEBUG] Initializing playback button');
+          // Use actual paused state from the script variable
+          updatePlaybackButton(paused);
+          
+          // Ensure discart animation is set correctly (in case updatePlaybackButton doesn't find the discart yet)
+          setTimeout(() => {
+            const discart = document.querySelector('.discart');
+            if (discart) {
+              if (paused) {
+                discart.classList.add('paused');
+                console.log('[DEBUG] Discart animation initialized as paused');
+              } else {
+                discart.classList.remove('paused');
+                console.log('[DEBUG] Discart animation initialized as spinning');
+              }
+            }
+          }, 200);
+        }
+        
+        // Shimmer effect timer - trigger every 60 seconds
+        function startShimmerTimer() {
+          setInterval(() => {
+            const marqueeText = document.querySelector('.marquee-text');
+            if (marqueeText && !marqueeText.classList.contains('hidden')) {
+              console.log('[DEBUG] Triggering shimmer effect');
+              
+              // Remove any existing shimmer class first
+              marqueeText.classList.remove('shimmer');
+              
+              // Reset all letter animations by temporarily removing and re-adding the class
+              const letters = marqueeText.querySelectorAll('.letter');
+              letters.forEach(letter => {
+                letter.style.animation = 'none';
+              });
+              
+              // Force a reflow to ensure the reset takes effect
+              marqueeText.offsetHeight;
+              
+              // Clear the inline styles to let CSS take over
+              letters.forEach(letter => {
+                letter.style.animation = '';
+              });
+              
+              // Add shimmer class
+              marqueeText.classList.add('shimmer');
+              
+              // Remove shimmer class after animation completes
+              setTimeout(() => {
+                marqueeText.classList.remove('shimmer');
+                // Reset all letters to normal state
+                letters.forEach(letter => {
+                  letter.style.animation = 'none';
+                  letter.style.color = '';
+                  letter.style.textShadow = '';
+                });
+              }, 6000); // Match animation duration (5s total)
+            }
+          }, 10000); // 10 seconds for testing
+        }
+        
+        // Side Panel Functions
+        function toggleSidePanel() {
+          try {
+            const panel = document.getElementById('sidePanel');
+            const arrow = document.querySelector('.side-panel-toggle-arrow');
+            if (!panel) {
+              console.error('[DEBUG] Side panel not found');
+              return;
+            }
+            if (!arrow) {
+              console.error('[DEBUG] Side panel arrow not found');
+              return;
+            }
+            panel.classList.toggle('open');
+            if (panel.classList.contains('open')) {
+              arrow.style.transform = 'rotate(180deg)';
+            } else {
+              arrow.style.transform = 'rotate(0deg)';
+            }
+          } catch (error) {
+            console.error('[DEBUG] Error in toggleSidePanel:', error);
+          }
+        }
+        
+        // Ensure function is globally accessible
+        window.toggleSidePanel = toggleSidePanel;
+        
+        {% include "partials/_server_management.js.html" %}
+
+        function populateServerDropdown(servers, currentServerId) {
+          const dropdownList = document.getElementById('serverDropdownList');
+          const dropdownLabel = document.getElementById('serverDropdownLabel');
+          
+          if (!dropdownList || !dropdownLabel) return;
+          
+          dropdownList.innerHTML = '';
+          
+          if (servers && servers.length > 0) {
+            servers.forEach(server => {
+              const displayName = serverDisplayName(server);
+              const isCurrent = server.id === currentServerId;
+              
+              const link = document.createElement('a');
+              link.href = '#';
+              link.textContent = displayName;
+              link.dataset.serverId = server.id;
+              link.onclick = function(e) {
+                e.preventDefault();
+                const serverId = parseInt(this.dataset.serverId);
+                if (serverId && serverId !== currentServerId) {
+                  switchServerFromDropdown(serverId);
+                }
+                // Close dropdown
+                document.getElementById('serverDropdown').checked = false;
+              };
+              
+              if (isCurrent) {
+                link.classList.add('current-server');
+                dropdownLabel.innerHTML = `${displayName} <span style="font-size: 24px; margin-left: 10px; transition: transform 200ms linear; color: #fff;">▼</span>`;
+              }
+              
+              dropdownList.appendChild(link);
+            });
+          }
+        }
+        
+        {% include "partials/_server_switch.js.html" %}
+        
+        function initializeAlbumFlip() {
+          const flipContainer = document.querySelector('.album-flip');
+          if (!flipContainer) {
+            return;
+          }
+
+          let flipped = false;
+          let isAnimating = false;
+          const container = flipContainer.closest('.poster-container');
+          const indicator = container ? container.querySelector('.flip-indicator') : null;
+          const discartWrapper = document.querySelector('.discart-wrapper');
+          const retractDuration = 280;
+          const flipDuration = 800;
+
+          const updateIndicator = () => {
+            if (indicator) {
+              const label = flipped ? 'Show Front' : 'Show Back';
+              indicator.textContent = label;
+              indicator.setAttribute(
+                'aria-label',
+                flipped ? 'Show album front cover' : 'Show album back cover'
+              );
+            }
+            flipContainer.setAttribute('aria-pressed', flipped ? 'true' : 'false');
+          };
+
+          const toggleFlip = (event) => {
+            if (isAnimating) {
+              return;
+            }
+            isAnimating = true;
+
+            if (discartWrapper) {
+              discartWrapper.classList.add('retracted');
+            }
+
+            setTimeout(() => {
+              flipped = !flipped;
+              flipContainer.classList.toggle('flipped', flipped);
+              updateIndicator();
+            }, retractDuration);
+
+            if (discartWrapper) {
+              setTimeout(() => {
+                discartWrapper.classList.remove('retracted');
+              }, retractDuration + flipDuration);
+            }
+
+            setTimeout(() => {
+              isAnimating = false;
+              if (event && event.type === 'click' && event.currentTarget === flipContainer) {
+                flipContainer.blur();
+              }
+            }, retractDuration + flipDuration + 100);
+          };
+
+          updateIndicator();
+
+          // Use double-click for flip to avoid conflict with zoom (single-click)
+          flipContainer.addEventListener('dblclick', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            toggleFlip(event);
+          });
+
+          flipContainer.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar' || event.key === 'Space') {
+              event.preventDefault();
+              toggleFlip(event);
+            }
+          });
+
+          // Explicit Show Front / Show Back control
+          if (indicator) {
+            indicator.addEventListener('click', (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              toggleFlip(event);
+            });
+            indicator.addEventListener('dblclick', (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            });
+          }
+        }
+        
+        // Wait for DOM to be ready before initializing
+        function waitForDOM() {
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeAll);
+          } else {
+            initializeAll();
+          }
+        }
+        
+        function initializeAll() {
+          // Wait a bit more for all elements to be rendered
+          setTimeout(() => {
+            loadServers();
+            initializeBlurToggle();
+            initializeButton();
+            startShimmerTimer();
+            initializeAlbumFlip();
+          }, 200);
+        }
+        
+        waitForDOM();
+        
+        if (window.NowPlayingRuntime) {
+          NowPlayingRuntime.startClock({
+            getElapsed: function() { return elapsed; },
+            setElapsed: function(v) { elapsed = v; },
+            getDuration: function() { return duration; },
+            setDuration: function(v) { duration = v; },
+            isPaused: function() { return paused; },
+            setPaused: function(v) { paused = v; }
+          });
+          NowPlayingRuntime.startPlaybackMonitor({
+            onPaused: function(p) { paused = p; updatePlaybackButton(p); },
+            onItemChange: function(id) { attemptSoftUpdate(id); }
+          });
+        } else {
+          setInterval(updateTime, 1000);
+          setInterval(resyncTime, 5000);
+          startPlaybackPolling();
+        }
+        
+
+        // Poster Zoom Logic
+        (function() {
+          function setupPosterZoom() {
+            const posters = document.querySelectorAll('img.poster, img.show-poster, img.season-poster, img.front-face, img.back-face');
+            if (!posters.length) return;
+
+            let overlay = document.querySelector('.poster-zoom-overlay');
+            if (!overlay) {
+              overlay = document.createElement('div');
+              overlay.className = 'poster-zoom-overlay';
+              overlay.innerHTML = '<img class="poster-zoom-image" src="" alt="Expanded artwork">';
+              document.body.appendChild(overlay);
+            }
+
+            const overlayImg = overlay.querySelector('.poster-zoom-image');
+
+            function openOverlay(src, alt) {
+              if (!src) return;
+              overlayImg.src = src;
+              overlayImg.alt = alt || 'Expanded artwork';
+              overlay.classList.add('visible');
+            }
+
+            function closeOverlay() {
+              overlay.classList.remove('visible');
+              overlayImg.src = '';
+            }
+
+            posters.forEach(poster => {
+              // Skip non-image fallback icons if any are marked with .no-image
+              if (poster.classList.contains('no-image')) return;
+              
+              // Track click timing to prevent zoom on double-click
+              let lastClickTime = 0;
+              let clickTimeout = null;
+              
+              poster.addEventListener('click', (e) => {
+                const currentTime = Date.now();
+                const timeSinceLastClick = currentTime - lastClickTime;
+                
+                // If this is a double-click (within 300ms), don't zoom
+                if (timeSinceLastClick < 300) {
+                  clearTimeout(clickTimeout);
+                  lastClickTime = 0;
+                  return;
+                }
+                
+                // Otherwise, wait a bit to see if a second click comes
+                lastClickTime = currentTime;
+                clearTimeout(clickTimeout);
+                
+                clickTimeout = setTimeout(() => {
+                  // Single-click confirmed - zoom
+                  e.stopPropagation();
+                  openOverlay(poster.src, poster.alt);
+                  lastClickTime = 0;
+                }, 300);
+              });
+            });
+
+            overlay.addEventListener('click', () => {
+              closeOverlay();
+            });
+
+            document.addEventListener('keydown', (e) => {
+              if (e.key === 'Escape') {
+                closeOverlay();
+              }
+            });
+          }
+
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setupPosterZoom);
+          } else {
+            setupPosterZoom();
+          }
+        })();
+      </script>
+    </head>
+    <body>
+      <!-- Fanart Slideshow Container -->
+      <div class="fanart-container">
+        {{ fanart_debug_html }}
+        {{ fanart_slides_html }}
+      </div>
+      <script type="application/json" id="fanart-pending">{{ fanart_pending_json|safe }}</script>
+      
+      <div class="marquee">
+        <div class="marquee-text"><span class="letter">N</span><span class="letter">O</span><span class="letter">W</span><span class="letter">&nbsp;</span><span class="letter">P</span><span class="letter">L</span><span class="letter">A</span><span class="letter">Y</span><span class="letter">I</span><span class="letter">N</span><span class="letter">G</span></div>
+        <div class="marquee-toggle" onclick="toggleMarquee()" title="Hide Marquee">
+          <div style="color: white; font-size: 16px; font-weight: bold;">▲</div>
+        </div>
+      </div>
+      <div class="content">
+        <div class="three-column-layout">
+          <!-- Left Column: Album Cover and Discart -->
+          <div class="column-left">
+            <div class="poster-container{{ poster_container_extra_class }}">
+              {{ discart_html }}
+              {{ album_poster_html }}
+              {{ clearart_html }}
+            </div>
+          </div>
+          
+          <!-- Middle Column: Clearlogo, Song Info, Rating, Badges, Progress -->
+          <div class="column-middle">
+            {{ title_banner_html }}
+            
+            <div class="music-info">
+              <div class="music-badges">
+                {{ album_badge_html }}
+                {{ disc_badge_html }}
+                {{ track_badge_html }}
+                {{ title_badge_html }}
+              </div>
+              {{ album_rating_html }}
+            </div>
+            
+            <div class="badges">
+              {{ rating_html }}
+              <span class="badge">{{ audio_codec }}</span>
+              {{ container_badge_html }}
+              {{ total_discs_badge_html }}
+              {{ channels_badge_html }}
+              {{ bitrate_badge_html }}
+              {{ samplerate_badge_html }}
+              {{ bitdepth_badge_html }}
+              {{ record_label_badge_html }}
+              {{ genre_badges_html }}
+            </div>
+            {{ up_next_html }}
+            <div class="progress-wrapper">
+              <span class="badge" id="time-display" style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                <img id="playback-button" src="/play-button.png" alt="Play" style="width: 20px; height: 20px; opacity: 1; transition: opacity 0.5s ease;">
+                {{ elapsed_display }} / {{ duration_display }}
+              </span>
+              <div class="progress">
+                <div class="bar" style="width: {{ percent }}%;"></div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Right Column: Lyrics / Album / Artist panel -->
+          <div class="column-right">
+            {{ music_info_panel_html }}
+          </div>
+        </div>
+      </div>
+      
+      {% include 'partials/side_panel.html' %}
+    </body>
+    </html>
+    
+{% endautoescape %}

@@ -1,0 +1,42 @@
+        // Server Management Functions
+        let currentServerId = null;
+        let shimmerInterval = null;
+        let fanartInterval = null;
+        
+        async function loadServers() {
+          try {
+            const response = await fetch('/api/servers');
+            const data = await response.json();
+            
+            if (data.servers && data.servers.length > 0) {
+              // Get current server
+              const currentResponse = await fetch('/api/current-server');
+              const currentData = await currentResponse.json();
+              
+              if (currentData.server_id) {
+                currentServerId = currentData.server_id;
+              } else {
+                // Default to first server
+                currentServerId = data.servers[0].id;
+                // Switch to first server if none selected
+                await switchServerFromDropdown(data.servers[0].id);
+                return;
+              }
+              
+              // Populate new dropdown menu
+              populateServerDropdown(data.servers, currentData.server_id || data.servers[0].id);
+            }
+          } catch (error) {
+            console.error('Failed to load servers:', error);
+          }
+        }
+        
+        function serverDisplayName(server) {
+          if (!server) return '';
+          if (server.name) return server.name;
+          const label = (server.label || '').trim();
+          const ip = server.ip || '';
+          if (label && ip) return `${label} (${ip})`;
+          if (label) return label;
+          return ip || server.host || ('Server ' + server.id);
+        }

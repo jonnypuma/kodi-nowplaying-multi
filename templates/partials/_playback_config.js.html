@@ -1,0 +1,12 @@
+        const PLAYBACK_POLL_MS = 4000;
+        (function initProgressBar() {
+          function apply() {
+            const bar = document.querySelector('.progress .bar') || document.querySelector('.bar');
+            if (bar && typeof __np.percent === 'number') bar.style.width = __np.percent + '%';
+          }
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', apply);
+          } else {
+            apply();
+          }
+        })();

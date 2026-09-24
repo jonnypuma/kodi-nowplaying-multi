@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.6] - 2026-09-23
+
+### Changed
+- Movie and TV overview tiles share one artwork order: landscape, then fanart
+  with the banner overlaid, then fanart alone, then the show thumb. Episode
+  screenshots are not used as that thumb.
+
+## [3.5.5] - 2026-09-23
+
+### Fixed
+- Overview composite art is split by type. TV shows still prefer `thumb.jpg`.
+  Movies prefer `landscape` for that same combined image. Missing either one
+  still falls back to fanart with the banner overlaid.
+
+## [3.5.4] - 2026-09-23
+
+### Changed
+- Overview tiles prefer the movie or TV show thumb (the composite that already
+  combines fanart and the title). Fanart with the banner overlaid is only used
+  when that thumb is missing. Episode screenshots are not treated as the show thumb.
+
+## [3.5.3] - 2026-09-22
+
+### Fixed
+- Movie (and music) posters sat too low when there was no disc art, because the
+  layout still reserved the discart peek/drop. With no discart the poster now
+  lines up with the top of the heading/clearlogo column.
+
 ## [3.5.2] - 2026-09-20
 
 ### Added

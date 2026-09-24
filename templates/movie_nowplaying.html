@@ -1,0 +1,1561 @@
+{% autoescape false %}
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Now Playing</title>
+      <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+      <link rel="stylesheet" href="/static/nowplaying-common.css">
+      <script src="/static/nowplaying-common.js"></script>
+      <style>
+        body {
+          font-family: sans-serif;
+          animation: fadeIn 1s;
+          position: relative;
+          margin: 0;
+          padding: 0;
+          opacity: 1;
+          transition: opacity 0.8s ease;
+          overflow-x: hidden;
+        }
+        html {
+          overflow-x: hidden;
+        }
+        
+        /* Fanart Slideshow Styles */
+        .fanart-container {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          z-index: -1;
+        }
+        
+        .fanart-slide {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background-size: cover;
+          background-position: center;
+          background-repeat: no-repeat;
+          opacity: 0;
+          transition: opacity 2s ease-in-out;
+        }
+        
+        .fanart-slide.active {
+          opacity: 1;
+        }
+        
+        .fanart-slide.fade-out {
+          opacity: 0;
+        }
+        body.fade-out {
+          opacity: 0;
+        }
+        body::before {
+          content: "";
+          position: absolute;
+          top: 0; left: 0;
+          width: 100%; height: 100%;
+          background: rgba(0,0,0,var(--overlay-opacity, 0));
+          z-index: 0;
+          pointer-events: none;
+          transition: background 0.3s ease;
+        }
+        .content {
+          position: relative;
+          z-index: 1;
+          padding: 5px 32px 24px 28px;
+          display: flex;
+          gap: clamp(24px, 3vw, 48px);
+          align-items: flex-start;
+          width: 100%;
+          max-width: 100vw;
+          box-sizing: border-box;
+          color: white;
+          text-shadow:
+            -1px -1px 0 rgba(0,0,0,0.95),
+             0   -1px 0 rgba(0,0,0,0.95),
+             1px -1px 0 rgba(0,0,0,0.95),
+            -1px  0   0 rgba(0,0,0,0.95),
+             1px  0   0 rgba(0,0,0,0.95),
+            -1px  1px 0 rgba(0,0,0,0.95),
+             0    1px 0 rgba(0,0,0,0.95),
+             1px  1px 0 rgba(0,0,0,0.95),
+             0    2px 4px rgba(0,0,0,0.9);
+        }
+        .poster-container {
+          --discart-peek: clamp(56px, 8vh, 80px);
+          --poster-drop: 45px;
+          position: relative;
+          overflow: visible;
+          height: calc(clamp(300px, 56vh, 500px) + var(--poster-drop));
+          width: auto;
+          /* Lift poster so discart can peek above it while staying inside content */
+          margin-top: var(--discart-peek);
+          flex: 0 0 auto;
+        }
+        .poster-container.no-discart {
+          --discart-peek: 0px;
+          --poster-drop: 0px;
+          height: clamp(300px, 56vh, 500px);
+          margin-top: 0;
+        }
+        .poster {
+          height: clamp(300px, 56vh, 500px);
+          width: auto;
+          border-radius: 8px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+          position: relative;
+          z-index: 2;
+          cursor: zoom-in;
+          /* Drop poster only — exposes more discart above it */
+          margin-top: var(--poster-drop);
+        }
+        .discart-wrapper {
+          position: absolute;
+          /* top of discart aligns with content padding (5px below overlay edge) */
+          top: calc(-1 * var(--discart-peek));
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 1;
+          height: clamp(180px, 28vh, 250px);
+          width: clamp(180px, 28vh, 250px);
+          pointer-events: none;
+        }
+        .discart {
+          width: clamp(180px, 28vh, 250px);
+          height: clamp(180px, 28vh, 250px);
+          aspect-ratio: 1 / 1;
+          object-fit: cover;
+          border-radius: 50%;
+          animation: spin 6s linear infinite;
+          animation-play-state: running;
+          opacity: 1;
+          filter: drop-shadow(0 0 4px rgba(0,0,0,0.6));
+        }
+        .discart.paused {
+          animation-play-state: paused;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to  { transform: rotate(360deg); }
+        }
+        .progress-wrapper {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-top: 6px;
+          width: 100%;
+          max-width: none;
+          box-sizing: border-box;
+        }
+        .progress-container {
+          flex: 1;
+          min-width: 0;
+          overflow: hidden;
+          position: relative;
+          flex-shrink: 1;
+        }
+        .progress {
+          background: #2a2a2a;
+          border-radius: 15px;
+          height: 20px;
+          overflow: hidden;
+          border: 1px solid rgba(0,0,0,0.75);
+          box-shadow: 
+            inset 0 1px 0 rgba(255,255,255,0.1),
+            inset 0 0 5px rgba(0,0,0,0.3),
+            0 2px 2px rgba(255,255,255,0.1),
+            inset 0 5px 10px rgba(0,0,0,0.4);
+          position: relative;
+          width: 100%;
+          box-sizing: border-box;
+        }
+        .bar {
+          background: linear-gradient(135deg, #4caf50 0%, #45a049 50%, #4caf50 100%);
+          height: 20px;
+          border-radius: 15px 3px 3px 15px;
+          width: 0%;
+          transition: width 0.5s;
+          position: relative;
+          box-shadow: 
+            inset 0 8px 0 rgba(255,255,255,0.2),
+            inset 0 1px 1px rgba(0,0,0,0.125);
+          border-right: 1px solid rgba(0,0,0,0.3);
+        }
+        .small {
+          font-size: 0.9em;
+          color: #ccc;
+        }
+        .badges {
+          display: flex;
+          gap: 8px;
+          margin-top: 10px;
+          flex-wrap: wrap;
+          align-items: center;
+          max-width: 100%;
+          overflow: hidden;
+          width: 100%;
+        }
+        .badge {
+          background: #333;
+          color: white;
+          padding: 4px 10px;
+          border-radius: 20px;
+          font-size: 0.8em;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+          text-shadow: none;
+        }
+        
+        .expandable-language {
+          cursor: pointer;
+          transition: all 0.3s ease;
+          position: relative;
+        }
+        
+        .expandable-language:hover {
+          background: #444;
+          transform: scale(1.05);
+        }
+        
+        .expandable-language.expanded {
+          background: #333;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .current-lang {
+          font-weight: bold;
+        }
+        
+        .all-langs {
+          transition: opacity 0.3s ease;
+        }
+        
+        .active-language {
+          background: rgba(76, 175, 80, 0.6);
+          color: white;
+          font-weight: bold;
+          padding: 2px 4px;
+          border-radius: 3px;
+          margin: 0 1px;
+          text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+        }
+        .badge-imdb {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          background: #f5c518;
+          color: black;
+          padding: 4px 10px;
+          border-radius: 20px;
+          font-size: 0.8em;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+          text-decoration: none;
+          font-weight: bold;
+          text-shadow: none !important;
+        }
+        .badge-imdb img {
+          height: 14px;
+        }
+        
+        #playback-button {
+          display: inline-block !important;
+          vertical-align: middle;
+          margin-right: 4px;
+        }
+        .banner {
+          display: block;
+          margin-bottom: 10px;
+          max-width: min(100%, 720px);
+          width: 100%;
+        }
+        .logo {
+          display: block;
+          margin: 0 0 10px 0;
+          height: clamp(120px, 16vh, 190px);
+          max-width: min(100%, 780px);
+          width: auto;
+          object-fit: contain;
+          object-position: left top;
+        }
+        .clearart {
+          display: block;
+          margin-top: 10px;
+          max-height: 80px;
+        }
+        {% include "partials/_marquee.css.html" %}
+        .content {
+          margin-top: 90px;
+          transition: margin-top 0.5s ease-in-out;
+        }
+        .marquee {
+          transition: transform 0.5s ease-in-out;
+        }
+        .marquee.hidden {
+          transform: translateY(-100%);
+        }
+        .content.no-marquee {
+          margin-top: 16px;
+        }
+        
+        /* Blur Toggle Button */
+        .blur-toggle {
+          position: absolute;
+          top: 15px;
+          right: 15px;
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          background: rgba(0,0,0,0.6);
+          border: 1px solid rgba(255,255,255,0.2);
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.3s ease;
+          box-shadow: 0 0 10px rgba(255,255,255,0.1);
+          animation: subtleGlow 3s ease-in-out infinite;
+          z-index: 10;
+        }
+        
+        .blur-toggle:hover {
+          transform: scale(1.1);
+          box-shadow: 0 0 15px rgba(255,255,255,0.3);
+          background: rgba(0,0,0,0.8);
+        }
+        
+        .blur-toggle:active {
+          transform: scale(0.95);
+        }
+        
+        .blur-toggle svg {
+          width: 20px;
+          height: 20px;
+          fill: rgba(255,255,255,0.8);
+          transition: fill 0.3s ease;
+        }
+        
+        .blur-toggle:hover svg {
+          fill: rgba(255,255,255,1);
+        }
+        
+        @keyframes subtleGlow {
+          0%, 100% { box-shadow: 0 0 10px rgba(255,255,255,0.1); }
+          50% { box-shadow: 0 0 15px rgba(255,255,255,0.2); }
+        }
+        
+        /* Blur state classes */
+        .content.blurred {
+          backdrop-filter: blur(5px);
+        }
+        
+        .content.non-blurred {
+          backdrop-filter: none;
+        }
+
+        /* Poster Zoom Overlay */
+        .poster-zoom-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.85);
+          display: none;
+          align-items: center;
+          justify-content: center;
+          z-index: 2000;
+        }
+        .poster-zoom-overlay.visible {
+          display: flex;
+        }
+        .poster-zoom-image {
+          max-width: 80vw;
+          max-height: 80vh;
+          border-radius: 10px;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.9);
+          transform: scale(0.7);
+          opacity: 0;
+          transition: transform 0.25s ease-out, opacity 0.25s ease-out;
+        }
+        .poster-zoom-overlay.visible .poster-zoom-image {
+          transform: scale(1);
+          opacity: 1;
+        }
+        .poster-zoom-overlay img {
+          object-fit: contain;
+        }
+        
+        /* Side Panel Styles */
+        .side-panel {
+          position: fixed;
+          top: 0;
+          right: -530px;
+          width: 530px;
+          max-width: calc(100vw - 40px);
+          height: 100vh;
+          background: rgba(0, 0, 0, 0.85);
+          backdrop-filter: blur(10px);
+          z-index: 1500;
+          transition: right 0.5s ease-in-out;
+          overflow: visible;
+          padding: 12px;
+          box-shadow: -5px 0 20px rgba(0, 0, 0, 0.5);
+          box-sizing: border-box;
+        }
+        
+        .side-panel.open {
+          right: 0;
+        }
+        
+        .side-panel-toggle {
+          position: absolute;
+          left: -20px;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 20px;
+          height: 40px;
+          background: rgba(0, 0, 0, 0.85);
+          backdrop-filter: blur(10px);
+          border-radius: 20px 0 0 20px;
+          margin-right: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          z-index: 1501;
+          transition: all 0.3s ease;
+          box-shadow: -2px 0 10px rgba(0, 0, 0, 0.3);
+        }
+        
+        .side-panel-toggle-arrow {
+          color: rgba(255, 255, 255, 0.8);
+          font-size: 14px;
+          font-weight: bold;
+          transition: transform 0.3s ease;
+          margin-left: 2px;
+        }
+        
+        .side-panel h2 {
+          color: white;
+          margin: 0 0 20px 0;
+          font-size: 1.5em;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        
+        .side-panel select {
+          background: rgba(255, 255, 255, 0.1);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          color: white;
+          padding: 8px 12px;
+          border-radius: 5px;
+          font-size: 14px;
+          cursor: pointer;
+          min-width: 150px;
+        }
+        
+        .side-panel select option {
+          background: white;
+          color: black;
+        }
+        
+        /* Note: option:hover is unreliable in native select dropdowns */
+        /* The selected option will be highlighted via :checked */
+        
+        
+        {% include "partials/_side_panel_sections.css.html" %}
+        
+        .connection-status {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        
+        .connection-error {
+          color: #ff6b6b;
+          font-size: 12px;
+          margin-left: 10px;
+        }
+        
+        /* Toggle Component Styles */
+        {% include "partials/_side_panel_controls.css.html" %}
+        {% include "partials/_side_panel_dropdown.css.html" %}
+
+        /* Poster Zoom Overlay */
+        .poster-zoom-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.85);
+          display: none;
+          align-items: center;
+          justify-content: center;
+          z-index: 2000;
+        }
+        .poster-zoom-overlay.visible {
+          display: flex;
+        }
+        .poster-zoom-image {
+          max-width: 80vw;
+          max-height: 80vh;
+          border-radius: 10px;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.9);
+          transform: scale(0.7);
+          opacity: 0;
+          transition: transform 0.25s ease-out, opacity 0.25s ease-out;
+        }
+        .poster-zoom-overlay.visible .poster-zoom-image {
+          transform: scale(1);
+          opacity: 1;
+        }
+        .poster-zoom-overlay img {
+          object-fit: contain;
+        }
+      </style>
+      <script type="application/json" id="np-bootstrap">{"elapsed":{{ elapsed }},"duration":{{ duration }},"paused":{{ paused_js }},"percent":{{ percent }}}</script>
+      <script>
+        const __np = JSON.parse(document.getElementById('np-bootstrap').textContent);
+        let elapsed = __np.elapsed;
+        let duration = __np.duration;
+        let paused = __np.paused;
+        let lastPlaybackState = null;
+        let noPlayCount = 0;
+        let redirectingToIdle = false;
+        let playbackPollInFlight = false;
+        let playbackPollTimer = null;
+        {% include "partials/_playback_config.js.html" %}
+        
+        // Side Panel Functions - Define at top to ensure availability
+        function toggleSidePanel() {
+          const panel = document.getElementById('sidePanel');
+          const arrow = document.querySelector('.side-panel-toggle-arrow');
+          if (panel && arrow) {
+            panel.classList.toggle('open');
+            if (panel.classList.contains('open')) {
+              arrow.style.transform = 'rotate(180deg)';
+            } else {
+              arrow.style.transform = 'rotate(0deg)';
+            }
+          }
+        }
+        window.toggleSidePanel = toggleSidePanel;
+        
+        // Expandable language badges functionality
+        document.addEventListener('DOMContentLoaded', function() {
+          const languageBadges = document.querySelectorAll('.expandable-language');
+          
+          languageBadges.forEach(badge => {
+            badge.addEventListener('click', function() {
+              const isExpanded = this.classList.contains('expanded');
+              const currentLang = this.querySelector('.current-lang');
+              const allLangs = this.querySelector('.all-langs');
+              const currentLangText = this.dataset.current;
+              const allLangsText = this.dataset.all;
+              
+              if (isExpanded) {
+                // Collapse: show only current language
+                this.classList.remove('expanded');
+                currentLang.style.display = 'inline';
+                allLangs.style.display = 'none';
+                // Store preference
+                localStorage.setItem('language-badge-expanded-' + this.dataset.type, 'false');
+              } else {
+                // Expand: show all languages with active language highlighted
+                this.classList.add('expanded');
+                currentLang.style.display = 'none';
+                
+                // Create highlighted language list
+                const languages = allLangsText.split(', ');
+                const highlightedLangs = languages.map(lang => {
+                  const isActive = lang.trim() === currentLangText.trim();
+                  return isActive ? `<span class="active-language">${lang}</span>` : lang;
+                }).join(', ');
+                
+                allLangs.innerHTML = highlightedLangs;
+                allLangs.style.display = 'inline';
+                // Store preference
+                localStorage.setItem('language-badge-expanded-' + this.dataset.type, 'true');
+              }
+            });
+            
+            // Restore saved preference
+            const savedState = localStorage.getItem('language-badge-expanded-' + badge.dataset.type);
+            if (savedState === 'true') {
+              badge.classList.add('expanded');
+              badge.querySelector('.current-lang').style.display = 'none';
+              
+              // Create highlighted language list for restored state
+              const currentLangText = badge.dataset.current;
+              const allLangsText = badge.dataset.all;
+              const languages = allLangsText.split(', ');
+              const highlightedLangs = languages.map(lang => {
+                const isActive = lang.trim() === currentLangText.trim();
+                return isActive ? `<span class="active-language">${lang}</span>` : lang;
+              }).join(', ');
+              
+              badge.querySelector('.all-langs').innerHTML = highlightedLangs;
+              badge.querySelector('.all-langs').style.display = 'inline';
+            }
+          });
+        });
+
+        function updateTime() {
+          console.log(`[DEBUG] updateTime called: paused=${paused}, elapsed=${elapsed}, duration=${duration}`);
+          // Always update progress bar width based on current elapsed time
+          if (duration > 0) {
+            let percent = (elapsed / duration) * 100;
+            // Ensure minimum 0.1% width when there's any progress to make it visible
+            if (elapsed > 0 && percent < 0.1) {
+              percent = 0.1;
+            }
+            // Round to 2 decimal places for smooth updates
+            percent = Math.round(percent * 100) / 100;
+            const bar = document.querySelector('.bar');
+            if (bar) {
+              bar.style.width = percent + '%';
+              console.log(`[DEBUG] Progress bar updated: elapsed=${elapsed}, percent=${percent}%`);
+            }
+          }
+          
+          // Only increment elapsed time if playing
+          if (!paused && elapsed < duration) {
+            elapsed++;
+            
+            // Format time based on duration
+            let elapsedTime, totalTime;
+            
+            if (duration < 3600) {
+              // Less than 1 hour: show mm:ss
+              let elapsedMinutes = Math.floor(elapsed / 60);
+              let elapsedSeconds = elapsed % 60;
+              elapsedTime = elapsedMinutes.toString().padStart(2, '0') + ':' + elapsedSeconds.toString().padStart(2, '0');
+              
+              let totalMinutes = Math.floor(duration / 60);
+              let totalSeconds = duration % 60;
+              totalTime = totalMinutes.toString().padStart(2, '0') + ':' + totalSeconds.toString().padStart(2, '0');
+            } else {
+              // 1 hour or more: show hh:mm:ss
+              let hours = Math.floor(elapsed / 3600);
+              let minutes = Math.floor((elapsed % 3600) / 60);
+              let seconds = elapsed % 60;
+              elapsedTime = hours.toString().padStart(2, '0') + ':' + minutes.toString().padStart(2, '0') + ':' + seconds.toString().padStart(2, '0');
+              
+              let totalHours = Math.floor(duration / 3600);
+              let totalMinutes = Math.floor((duration % 3600) / 60);
+              let totalSeconds = duration % 60;
+              totalTime = totalHours.toString().padStart(2, '0') + ':' + totalMinutes.toString().padStart(2, '0') + ':' + totalSeconds.toString().padStart(2, '0');
+            }
+            
+            // Update timer text, preserving the button
+            const timeDisplay = document.getElementById('time-display');
+            const button = timeDisplay.querySelector('#playback-button');
+            const timeText = elapsedTime + ' / ' + totalTime;
+            
+            if (button) {
+              // If button exists, find or create a text node after the button
+              let textNode = button.nextSibling;
+              
+              // Check if next sibling is a text node
+              if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+                // Update existing text node
+                textNode.textContent = ' ' + timeText;
+              } else {
+                // Remove any non-text nodes after the button
+                while (textNode && textNode.id !== 'playback-button') {
+                  const next = textNode.nextSibling;
+                  if (textNode.nodeType !== Node.TEXT_NODE) {
+                    timeDisplay.removeChild(textNode);
+                  }
+                  textNode = next;
+                }
+                
+                // Create and append new text node after button
+                textNode = document.createTextNode(' ' + timeText);
+                timeDisplay.appendChild(textNode);
+              }
+            } else {
+              // If no button, just update text
+              timeDisplay.textContent = timeText;
+            }
+          }
+        }
+
+        function resyncTime() {
+          fetch('/nowplaying?json=1')
+            .then(res => res.json())
+            .then(data => {
+              elapsed = data.elapsed;
+              duration = data.duration;
+              paused = data.paused;
+              
+              // Update progress bar width after syncing
+              if (duration > 0) {
+                let percent = (elapsed / duration) * 100;
+                // Ensure minimum 0.1% width when there's any progress to make it visible
+                if (elapsed > 0 && percent < 0.1) {
+                  percent = 0.1;
+                }
+                // Round to 2 decimal places for smooth updates
+                percent = Math.round(percent * 100) / 100;
+                const bar = document.querySelector('.bar');
+                if (bar) {
+                  bar.style.width = percent + '%';
+                }
+              }
+            });
+        }
+
+        let lastItemId = null;
+        let lastPausedState = null;
+        let lastAudioLang = null;
+        let lastSubtitleLang = null;
+        let cachedButton = null;
+        
+        {% include "partials/_playback_button.js.html" %}
+        
+        function updatePlaybackButton(paused) {
+          const button = getOrCreateButton();
+          console.log(`[DEBUG] updatePlaybackButton called: paused=${paused}, button found=${!!button}`);
+          if (button) {
+            console.log(`[DEBUG] Button current src: ${button.src}`);
+            
+            // Determine new image source
+            const newSrc = paused ? '/pause-button.png' : '/play-button.png';
+            const newAlt = paused ? 'Pause' : 'Play';
+            
+            // If the image is already correct, no need to change
+            if (button.src.endsWith(newSrc.split('/').pop())) {
+              console.log('[DEBUG] Button image already correct, no change needed');
+            } else {
+              // Fade out → change image → fade in
+              button.style.opacity = '0';
+              
+              setTimeout(() => {
+                button.src = newSrc;
+                button.alt = newAlt;
+                console.log(`[DEBUG] Button new src: ${button.src}`);
+                
+                // Fade back in
+                setTimeout(() => {
+                  button.style.opacity = '1';
+                }, 50); // Small delay to ensure image loads
+              }, 250); // Half of transition duration for smooth effect
+              
+              // Ensure button is visible
+              button.style.display = 'inline-block';
+            }
+          } else {
+            console.log('[ERROR] Could not get or create playback button!');
+          }
+          
+          // Always update discart animation based on playback state
+          updateDiscartAnimation(paused);
+        }
+        
+        function updateDiscartAnimation(paused) {
+          const discart = document.querySelector('.discart');
+          if (discart) {
+            if (paused) {
+              discart.classList.add('paused');
+              console.log('[DEBUG] Movie discart animation paused');
+            } else {
+              discart.classList.remove('paused');
+              console.log('[DEBUG] Movie discart animation resumed');
+            }
+          }
+        }
+        
+        function updateLanguageBadge(type, newLanguage) {
+          const badge = document.querySelector(`.badge[data-type="${type}"]`);
+          if (badge) {
+            const currentLangSpan = badge.querySelector('.current-lang');
+            if (currentLangSpan) {
+              currentLangSpan.textContent = newLanguage;
+              console.log(`[DEBUG] Updated ${type} badge to ${newLanguage}`);
+            }
+            
+            // Update the data-current attribute
+            badge.dataset.current = newLanguage;
+            
+            // If the badge is expanded, update the highlighted language
+            if (badge.classList.contains('expanded')) {
+              const allLangsSpan = badge.querySelector('.all-langs');
+              if (allLangsSpan) {
+                const allLangsText = badge.dataset.all;
+                const languages = allLangsText.split(', ');
+                const highlightedLangs = languages.map(lang => {
+                  const isActive = lang.trim() === newLanguage.trim();
+                  return isActive ? `<span class="active-language">${lang}</span>` : lang;
+                }).join(', ');
+                
+                allLangsSpan.innerHTML = highlightedLangs;
+                console.log(`[DEBUG] Updated expanded ${type} badge highlighting`);
+              }
+            }
+          }
+        }
+        
+        function checkPlaybackChange() {
+          if (playbackPollInFlight || redirectingToIdle) return;
+          playbackPollInFlight = true;
+          fetch('/poll_playback')
+            .then(res => {
+              if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+              }
+              return res.json();
+            })
+            .then(data => {
+              const isPlaying = data.playing === true;
+              const isNotPlaying = data.playing === false;
+              const currentState = isPlaying;
+              const currentItemId = data.item_id;
+              const currentPaused = data.paused;
+              const currentAudioLang = data.current_audio_lang || '';
+              const currentSubtitleLang = data.current_subtitle_lang || '';
+              const isError = data.error === true;
+              
+              console.log(`[DEBUG] Poll result: playing=${currentState}, item_id=${currentItemId}, lastItemId=${lastItemId}, paused=${currentPaused}, audio=${currentAudioLang}, subtitle=${currentSubtitleLang}`);
+
+              if (isError || data.error_idle === true) {
+                console.log('[DEBUG] Poll playback error flagged, skipping state changes');
+                return;
+              }
+
+              if (!isPlaying && !isNotPlaying) {
+                return;
+              }
+
+              if (data.transient_idle) {
+                console.log('[DEBUG] Transient idle (server debouncing stop)');
+                return;
+              }
+
+              if (isPlaying) {
+                noPlayCount = 0;
+                redirectingToIdle = false;
+              } else if (isNotPlaying && !redirectingToIdle) {
+                redirectingToIdle = true;
+                console.log('[DEBUG] Redirecting to idle — playback stopped');
+                document.body.classList.add('fade-out');
+                setTimeout(() => {
+                  window.location.href = '/';
+                }, 1500);
+                return;
+              }
+              
+              // Update playback button based on pause state
+              if (currentPaused !== lastPausedState) {
+                updatePlaybackButton(currentPaused);
+                lastPausedState = currentPaused;
+              }
+              
+              // Check for language changes and update badges
+              if (currentAudioLang && currentAudioLang !== lastAudioLang) {
+                console.log(`[DEBUG] Audio language changed from ${lastAudioLang} to ${currentAudioLang}`);
+                updateLanguageBadge('audio', currentAudioLang);
+                lastAudioLang = currentAudioLang;
+              }
+              
+              if (currentSubtitleLang && currentSubtitleLang !== lastSubtitleLang) {
+                console.log(`[DEBUG] Subtitle language changed from ${lastSubtitleLang} to ${currentSubtitleLang}`);
+                updateLanguageBadge('subtitle', currentSubtitleLang);
+                lastSubtitleLang = currentSubtitleLang;
+              }
+              
+              // Check for paused state change and update discart animation
+              if (currentPaused !== lastPausedState) {
+                updatePlaybackButton(currentPaused);
+                lastPausedState = currentPaused;
+              }
+              
+              // Check for playback state / item changes
+              if (lastPlaybackState === null) {
+                lastPlaybackState = currentState;
+                if (currentItemId) lastItemId = currentItemId;
+                lastPausedState = currentPaused;
+                lastAudioLang = currentAudioLang;
+                lastSubtitleLang = currentSubtitleLang;
+                updatePlaybackButton(currentPaused);
+                console.log(`[DEBUG] Initial state set: lastPlaybackState=${lastPlaybackState}, lastItemId=${lastItemId}, lastPausedState=${lastPausedState}, audio=${lastAudioLang}, subtitle=${lastSubtitleLang}`);
+              } else {
+                // Detect item changes whenever playing — including after a brief stop.
+                // Keep lastItemId while idle so resume with a different item is not missed.
+                const knownItemId = lastItemId;
+                if (isPlaying && currentItemId && knownItemId && currentItemId !== knownItemId) {
+                  console.log(`[DEBUG] Item changed from ${knownItemId} to ${currentItemId}`);
+                  document.body.classList.add('fade-out');
+                  setTimeout(() => {
+                    window.location.href = '/loading';
+                  }, 800);
+                  lastItemId = currentItemId;
+                } else if (isPlaying && currentItemId) {
+                  lastItemId = currentItemId;
+                }
+                lastPlaybackState = currentState;
+              }
+            })
+            .catch(error => {
+              console.error('Polling error:', error);
+            })
+            .finally(() => {
+              playbackPollInFlight = false;
+            });
+        }
+
+        {% include "partials/_playback_polling.js.html" %}
+        
+        {% include "partials/_server_management.js.html" %}
+
+        function populateServerDropdown(servers, currentServerId) {
+          const dropdownList = document.getElementById('serverDropdownList');
+          const dropdownLabel = document.getElementById('serverDropdownLabel');
+          
+          if (!dropdownList || !dropdownLabel) return;
+          
+          dropdownList.innerHTML = '';
+          
+          if (servers && servers.length > 0) {
+            servers.forEach(server => {
+              const displayName = serverDisplayName(server);
+              const isCurrent = server.id === currentServerId;
+              
+              const link = document.createElement('a');
+              link.href = '#';
+              link.textContent = displayName;
+              link.dataset.serverId = server.id;
+              link.onclick = function(e) {
+                e.preventDefault();
+                const serverId = parseInt(this.dataset.serverId);
+                if (serverId && serverId !== currentServerId) {
+                  switchServerFromDropdown(serverId);
+                }
+                // Close dropdown
+                document.getElementById('serverDropdown').checked = false;
+              };
+              
+              if (isCurrent) {
+                link.classList.add('current-server');
+                dropdownLabel.innerHTML = `${displayName} <span style="font-size: 24px; margin-left: 10px; transition: transform 200ms linear; color: #fff;">▼</span>`;
+              }
+              
+              dropdownList.appendChild(link);
+            });
+            console.log('[DEBUG] Dropdown populated with', servers.length, 'servers');
+          }
+        }
+        
+        {% include "partials/_server_switch.js.html" %}
+
+        // Initialize button immediately and on DOM ready
+        function initializeButton() {
+          console.log('[DEBUG] Initializing playback button');
+          // Use actual paused state from the script variable
+          updatePlaybackButton(paused);
+          
+          // Ensure discart animation is set correctly (in case updatePlaybackButton doesn't find the discart yet)
+          setTimeout(() => {
+            const discart = document.querySelector('.discart');
+            if (discart) {
+              if (paused) {
+                discart.classList.add('paused');
+                console.log('[DEBUG] Movie discart animation initialized as paused');
+              } else {
+                discart.classList.remove('paused');
+                console.log('[DEBUG] Movie discart animation initialized as spinning');
+              }
+            }
+          }, 200);
+        }
+        
+        // Shimmer effect timer - trigger every 60 seconds
+        function startShimmerTimer() {
+          setInterval(() => {
+            const marqueeText = document.querySelector('.marquee-text');
+            if (marqueeText && !marqueeText.classList.contains('hidden')) {
+              console.log('[DEBUG] Triggering shimmer effect');
+              
+              // Remove any existing shimmer class first
+              marqueeText.classList.remove('shimmer');
+              
+              // Reset all letter animations by temporarily removing and re-adding the class
+              const letters = marqueeText.querySelectorAll('.letter');
+              letters.forEach(letter => {
+                letter.style.animation = 'none';
+              });
+              
+              // Force a reflow to ensure the reset takes effect
+              marqueeText.offsetHeight;
+              
+              // Clear the inline styles to let CSS take over
+              letters.forEach(letter => {
+                letter.style.animation = '';
+              });
+              
+              // Add shimmer class
+              marqueeText.classList.add('shimmer');
+              
+              // Remove shimmer class after animation completes
+              setTimeout(() => {
+                marqueeText.classList.remove('shimmer');
+                // Reset all letters to normal state
+                letters.forEach(letter => {
+                  letter.style.animation = 'none';
+                  letter.style.color = '';
+                  letter.style.textShadow = '';
+                });
+              }, 6000); // Match animation duration (5s total)
+            }
+          }, 10000); // 10 seconds for testing
+        }
+        
+        // Wait for DOM to be ready before initializing
+        function waitForDOM() {
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeAll);
+          } else {
+            initializeAll();
+          }
+        }
+        
+        // Preference Management Functions (Server-side storage with localStorage fallback)
+        async function loadPreferences() {
+          try {
+            const response = await fetch('/api/preferences');
+            if (response.ok) {
+              const prefs = await response.json();
+              const pick = (key, fallback) =>
+                Object.prototype.hasOwnProperty.call(prefs, key) && prefs[key] != null && prefs[key] !== ''
+                  ? String(prefs[key])
+                  : (localStorage.getItem(key) || fallback);
+              // Server wins when key exists (including "disabled"); localStorage only fills gaps
+              return {
+                blurPreference: pick('blurPreference', 'non-blurred'),
+                blurAmount: pick('blurAmount', '50'),
+                overlayPreference: pick('overlayPreference', 'enabled'),
+                overlayOpacity: pick('overlayOpacity', '85'),
+                marqueeInterval: pick('marqueeInterval', '10'),
+                fanartInterval: pick('fanartInterval', '20'),
+                fanartMinSizeKB: pick('fanartMinSizeKB', '200'),
+                _server: prefs
+              };
+            }
+          } catch (error) {
+            console.log('[DEBUG] Failed to load preferences from server, using localStorage:', error);
+          }
+          // Fallback to localStorage
+          return {
+            blurPreference: localStorage.getItem('blurPreference') || 'non-blurred',
+            blurAmount: localStorage.getItem('blurAmount') || '50',
+            overlayPreference: localStorage.getItem('overlayPreference') || 'enabled',
+            overlayOpacity: localStorage.getItem('overlayOpacity') || '85',
+            marqueeInterval: localStorage.getItem('marqueeInterval') || '10',
+            fanartInterval: localStorage.getItem('fanartInterval') || '20',
+            fanartMinSizeKB: localStorage.getItem('fanartMinSizeKB') || '200'
+          };
+        }
+        
+        {% include "partials/_save_preference.js.html" %}
+        function toggleOverlay() {
+          const content = document.querySelector('.content');
+          const overlayToggle = document.getElementById('overlayToggle');
+          const opacitySliderContainer = document.getElementById('opacitySliderContainer');
+          const isEnabled = overlayToggle.checked;
+          
+          // Control body::before overlay via CSS variable
+          const body = document.querySelector('body');
+          if (body) {
+            if (isEnabled) {
+              body.style.setProperty('--overlay-opacity', '0.4');
+            } else {
+              body.style.setProperty('--overlay-opacity', '0');
+            }
+          }
+          
+          if (isEnabled) {
+            // Enable overlay - apply saved opacity
+            const savedOpacity = parseInt(localStorage.getItem('overlayOpacity') || '85');
+            const opacity = savedOpacity / 100;
+            content.style.backgroundColor = `rgba(0, 0, 0, ${opacity * 0.85})`;
+            content.style.boxShadow = '0 8px 32px rgba(0,0,0,0.8)';
+            opacitySliderContainer.style.display = 'block';
+            savePreference('overlayPreference', 'enabled');
+          } else {
+            // Disable overlay - hide it
+            content.style.backgroundColor = 'rgba(0, 0, 0, 0)';
+            content.style.boxShadow = 'none';
+            opacitySliderContainer.style.display = 'none';
+            savePreference('overlayPreference', 'disabled');
+          }
+        }
+        
+        function updateOverlayOpacity(value) {
+          const content = document.querySelector('.content');
+          const overlayToggle = document.getElementById('overlayToggle');
+          const opacityValue = parseInt(value);
+          document.getElementById('opacityValue').textContent = opacityValue + '%';
+          
+          // Only apply opacity if overlay toggle is enabled
+          const body = document.querySelector('body');
+          if (overlayToggle.checked) {
+            const opacity = opacityValue / 100;
+            content.style.backgroundColor = `rgba(0, 0, 0, ${opacity * 0.85})`;
+            content.style.boxShadow = '0 8px 32px rgba(0,0,0,0.8)';
+            if (body) {
+              body.style.setProperty('--overlay-opacity', (opacity * 0.4).toString());
+            }
+          } else {
+            // Remove all overlay effects if toggle is disabled
+            content.style.backgroundColor = 'rgba(0, 0, 0, 0)';
+            content.style.boxShadow = 'none';
+            if (body) {
+              body.style.setProperty('--overlay-opacity', '0');
+            }
+          }
+          
+          savePreference('overlayOpacity', opacityValue.toString());
+        }
+        
+        function updateMarqueeInterval(value, persist = true) {
+          const intervalValue = parseInt(value);
+          document.getElementById('marqueeIntervalValue').textContent = intervalValue + 's';
+          
+          if (shimmerInterval) {
+            clearInterval(shimmerInterval);
+          }
+          
+          shimmerInterval = setInterval(() => {
+            const marqueeText = document.querySelector('.marquee-text');
+            if (marqueeText && !marqueeText.classList.contains('hidden')) {
+              marqueeText.classList.remove('shimmer');
+              const letters = marqueeText.querySelectorAll('.letter');
+              letters.forEach(letter => {
+                letter.style.animation = 'none';
+              });
+              marqueeText.offsetHeight;
+              letters.forEach(letter => {
+                letter.style.animation = '';
+              });
+              marqueeText.classList.add('shimmer');
+              setTimeout(() => {
+                marqueeText.classList.remove('shimmer');
+              }, 2000);
+            }
+          }, intervalValue * 1000);
+          
+          if (persist) {
+            savePreference('marqueeInterval', intervalValue.toString());
+          }
+        }
+        
+        function updateFanartInterval(value, persist = true) {
+          const intervalValue = parseInt(value);
+          document.getElementById('fanartIntervalValue').textContent = intervalValue + 's';
+          
+          if (fanartInterval) {
+            clearInterval(fanartInterval);
+            fanartInterval = null;
+          }
+          
+          if (typeof window.cycleFanarts === 'function') {
+            fanartInterval = setInterval(window.cycleFanarts, intervalValue * 1000);
+          }
+          
+          if (persist) {
+            savePreference('fanartInterval', intervalValue.toString());
+          }
+        }
+
+        function updateFanartMinSize(value, persist = true) {
+          const sizeValue = parseInt(value);
+          document.getElementById('fanartMinSizeValue').textContent = sizeValue + 'kB';
+          if (persist) {
+            savePreference('fanartMinSizeKB', sizeValue.toString());
+          }
+        }
+        
+        async function initializeBlurToggle() {
+          const content = document.querySelector('.content');
+          const blurToggle = document.getElementById('blurToggle');
+          const overlayToggle = document.getElementById('overlayToggle');
+          const blurSliderContainer = document.getElementById('blurSliderContainer');
+          const opacitySliderContainer = document.getElementById('opacitySliderContainer');
+          
+          // Load preferences from server (with localStorage fallback)
+          const prefs = await loadPreferences();
+          const serverPrefs = prefs._server || {};
+          const savedBlurPreference = prefs.blurPreference;
+          const savedOverlayPreference = prefs.overlayPreference;
+          const savedBlurAmount = prefs.blurAmount;
+          const savedOpacity = prefs.overlayOpacity;
+          const savedMarqueeInterval = prefs.marqueeInterval;
+          const savedFanartInterval = prefs.fanartInterval;
+          const savedFanartMinSize = prefs.fanartMinSizeKB;
+          
+          // Initialize blur toggle
+          if (savedBlurPreference === 'blurred') {
+            blurToggle.checked = true;
+            content.style.backdropFilter = `blur(${parseInt(savedBlurAmount) / 10}px)`;
+            content.style.webkitBackdropFilter = `blur(${parseInt(savedBlurAmount) / 10}px)`;
+            blurSliderContainer.style.display = 'block';
+          } else {
+            blurToggle.checked = false;
+            content.style.backdropFilter = 'none';
+            content.style.webkitBackdropFilter = 'none';
+            blurSliderContainer.style.display = 'none';
+          }
+          
+          // Set blur slider value
+          if (document.getElementById('blurSlider')) {
+            document.getElementById('blurSlider').value = savedBlurAmount;
+            document.getElementById('blurValue').textContent = savedBlurAmount + '%';
+          }
+
+          // Sync missing prefs to server in one request (avoid concurrent POST races)
+          const missing = {};
+          const prefKeys = [
+            ['blurPreference', savedBlurPreference],
+            ['blurAmount', savedBlurAmount],
+            ['overlayPreference', savedOverlayPreference],
+            ['overlayOpacity', savedOpacity],
+            ['marqueeInterval', savedMarqueeInterval],
+            ['fanartInterval', savedFanartInterval],
+            ['fanartMinSizeKB', savedFanartMinSize]
+          ];
+          prefKeys.forEach(([key, value]) => {
+            if (!Object.prototype.hasOwnProperty.call(serverPrefs, key)) {
+              missing[key] = value;
+            }
+          });
+          if (Object.keys(missing).length) {
+            savePreferencesBatch(missing);
+          }
+          
+          // Initialize overlay toggle
+          const body = document.querySelector('body');
+          if (savedOverlayPreference === 'enabled') {
+            overlayToggle.checked = true;
+            const opacity = parseInt(savedOpacity) / 100;
+            content.style.backgroundColor = `rgba(0, 0, 0, ${opacity * 0.85})`;
+            content.style.boxShadow = '0 8px 32px rgba(0,0,0,0.8)';
+            opacitySliderContainer.style.display = 'block';
+            if (body) {
+              body.style.setProperty('--overlay-opacity', '0.4');
+            }
+          } else {
+            overlayToggle.checked = false;
+            content.style.backgroundColor = 'rgba(0, 0, 0, 0)';
+            content.style.boxShadow = 'none';
+            opacitySliderContainer.style.display = 'none';
+            if (body) {
+              body.style.setProperty('--overlay-opacity', '0');
+            }
+          }
+          
+          // Set opacity slider value
+          if (document.getElementById('opacitySlider')) {
+            document.getElementById('opacitySlider').value = savedOpacity;
+            document.getElementById('opacityValue').textContent = savedOpacity + '%';
+          }
+          
+          // Initialize intervals (persist=false so page load does not rewrite preferences)
+          if (document.getElementById('marqueeIntervalSlider')) {
+            updateMarqueeInterval(savedMarqueeInterval, false);
+            document.getElementById('marqueeIntervalSlider').value = savedMarqueeInterval;
+          }
+          
+          if (document.getElementById('fanartIntervalSlider')) {
+            updateFanartInterval(savedFanartInterval, false);
+            document.getElementById('fanartIntervalSlider').value = savedFanartInterval;
+          }
+
+          if (document.getElementById('fanartMinSizeSlider')) {
+            updateFanartMinSize(savedFanartMinSize, false);
+            document.getElementById('fanartMinSizeSlider').value = savedFanartMinSize;
+          }
+        }
+        
+        function initializeProgressBar() {
+          // Initialize progress bar width on page load
+          if (duration > 0) {
+            let percent = (elapsed / duration) * 100;
+            // Ensure minimum 0.1% width when there's any progress to make it visible
+            if (elapsed > 0 && percent < 0.1) {
+              percent = 0.1;
+            }
+            // Round to 2 decimal places for smooth updates
+            percent = Math.round(percent * 100) / 100;
+            const bar = document.querySelector('.bar');
+            if (bar) {
+              bar.style.width = percent + '%';
+              console.log(`[DEBUG] Progress bar initialized: elapsed=${elapsed}, duration=${duration}, percent=${percent}%`);
+            }
+          }
+        }
+        
+        // Wait for DOM to be ready before initializing
+        function waitForDOM() {
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeAll);
+          } else {
+            initializeAll();
+          }
+        }
+        
+        async function initializeAll() {
+          // Wait a bit more for all elements to be rendered
+          setTimeout(async () => {
+            initializeButton();
+            initializeProgressBar();
+            startShimmerTimer();
+            loadServers();
+            await initializeBlurToggle();
+          }, 200);
+        }
+        
+        waitForDOM();
+        
+        if (window.NowPlayingRuntime) {
+          NowPlayingRuntime.startClock({
+            getElapsed: function() { return elapsed; },
+            setElapsed: function(v) { elapsed = v; },
+            getDuration: function() { return duration; },
+            setDuration: function(v) { duration = v; },
+            isPaused: function() { return paused; },
+            setPaused: function(v) { paused = v; }
+          });
+          NowPlayingRuntime.startPlaybackMonitor({
+            onPaused: function(p) { paused = p; updatePlaybackButton(p); },
+            onLanguage: function(type, lang) { updateLanguageBadge(type, lang); },
+            onItemChange: function() {
+              document.body.classList.add('fade-out');
+              setTimeout(function() { window.location.href = '/loading'; }, 800);
+            }
+          });
+        } else {
+          setInterval(updateTime, 1000);
+          setInterval(resyncTime, 5000);
+          startPlaybackPolling();
+        }
+        
+        // Poster Zoom Logic
+        (function() {
+          function setupPosterZoom() {
+            const posters = document.querySelectorAll('img.poster, img.show-poster, img.season-poster');
+            if (!posters.length) return;
+
+            let overlay = document.querySelector('.poster-zoom-overlay');
+            if (!overlay) {
+              overlay = document.createElement('div');
+              overlay.className = 'poster-zoom-overlay';
+              overlay.innerHTML = '<img class="poster-zoom-image" src="" alt="Expanded artwork">';
+              document.body.appendChild(overlay);
+            }
+
+            const overlayImg = overlay.querySelector('.poster-zoom-image');
+
+            function openOverlay(src, alt) {
+              if (!src) return;
+              overlayImg.src = src;
+              overlayImg.alt = alt || 'Expanded artwork';
+              overlay.classList.add('visible');
+            }
+
+            function closeOverlay() {
+              overlay.classList.remove('visible');
+              overlayImg.src = '';
+            }
+
+            posters.forEach(poster => {
+              // Skip non-image fallback icons if any are marked with .no-image
+              if (poster.classList.contains('no-image')) return;
+              
+              poster.style.cursor = 'zoom-in';
+              poster.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openOverlay(poster.src, poster.alt);
+              });
+            });
+
+            overlay.addEventListener('click', () => {
+              closeOverlay();
+            });
+
+            document.addEventListener('keydown', (e) => {
+              if (e.key === 'Escape') {
+                closeOverlay();
+              }
+            });
+          }
+
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setupPosterZoom);
+          } else {
+            setupPosterZoom();
+          }
+        })();
+        
+        // Fanart slideshow functionality
+        setTimeout(function() {
+          let currentFanartIndex = 0;
+
+          function cycleFanarts() {
+            const fanartSlides = document.querySelectorAll('.fanart-slide');
+            const totalFanarts = fanartSlides.length;
+            if (totalFanarts <= 1) return;
+
+            const currentSlide = fanartSlides[currentFanartIndex % totalFanarts];
+            if (currentSlide) {
+              currentSlide.classList.remove('active');
+              currentSlide.classList.add('fade-out');
+            }
+
+            currentFanartIndex = (currentFanartIndex + 1) % totalFanarts;
+
+            const nextSlide = fanartSlides[currentFanartIndex];
+            if (nextSlide) {
+              nextSlide.classList.remove('fade-out');
+              nextSlide.classList.add('active');
+            }
+          }
+
+          window.cycleFanarts = cycleFanarts;
+          const initialCount = document.querySelectorAll('.fanart-slide').length;
+          if (initialCount > 1) {
+            const savedFanartInterval = localStorage.getItem('fanartInterval') || '20';
+            fanartInterval = setInterval(cycleFanarts, parseInt(savedFanartInterval) * 1000);
+            window._fanartSlideshowTimer = fanartInterval;
+            window._fanartSlideshowStarted = true;
+          }
+        }, 100); // Wait 100ms for DOM to be ready
+        
+        // Initialize blur toggle on page load
+        setTimeout(initializeBlurToggle, 100);
+
+        // Poster Zoom Logic
+        (function() {
+          function setupPosterZoom() {
+            const posters = document.querySelectorAll('img.poster, img.show-poster, img.season-poster');
+            if (!posters.length) return;
+
+            let overlay = document.querySelector('.poster-zoom-overlay');
+            if (!overlay) {
+              overlay = document.createElement('div');
+              overlay.className = 'poster-zoom-overlay';
+              overlay.innerHTML = '<img class="poster-zoom-image" src="" alt="Expanded artwork">';
+              document.body.appendChild(overlay);
+            }
+
+            const overlayImg = overlay.querySelector('.poster-zoom-image');
+
+            function openOverlay(src, alt) {
+              if (!src) return;
+              overlayImg.src = src;
+              overlayImg.alt = alt || 'Expanded artwork';
+              overlay.classList.add('visible');
+            }
+
+            function closeOverlay() {
+              overlay.classList.remove('visible');
+              overlayImg.src = '';
+            }
+
+            posters.forEach(poster => {
+              poster.style.cursor = 'zoom-in';
+              poster.addEventListener('click', (e) => {
+                // Skip non-image fallback icons if any are marked with .no-image
+                if (poster.classList.contains('no-image')) return;
+                e.stopPropagation();
+                openOverlay(poster.src, poster.alt);
+              });
+            });
+
+            overlay.addEventListener('click', () => {
+              closeOverlay();
+            });
+
+            document.addEventListener('keydown', (e) => {
+              if (e.key === 'Escape') {
+                closeOverlay();
+              }
+            });
+          }
+
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setupPosterZoom);
+          } else {
+            setupPosterZoom();
+          }
+        })();
+      </script>
+    </head>
+    <body>
+      <!-- Fanart Slideshow Container -->
+      <div class="fanart-container">
+        {{ fanart_slides_html }}
+      </div>
+      <script type="application/json" id="fanart-pending">{{ fanart_pending_json|safe }}</script>
+      
+      <div class="marquee">
+        <div class="marquee-text"><span class="letter">N</span><span class="letter">O</span><span class="letter">W</span><span class="letter">&nbsp;</span><span class="letter">P</span><span class="letter">L</span><span class="letter">A</span><span class="letter">Y</span><span class="letter">I</span><span class="letter">N</span><span class="letter">G</span></div>
+        <div class="marquee-toggle" onclick="toggleMarquee()" title="Hide Marquee">
+          <div style="color: white; font-size: 16px; font-weight: bold;">▲</div>
+        </div>
+      </div>
+      <div class="content">
+        <div class="poster-container{% if not discart_html %} no-discart{% endif %}">
+          {{ discart_html }}
+          {{ poster_html }}
+          <!-- Clearart removed as requested -->
+        </div>
+        <div class="meta-column">
+          <div class="meta-scroll">
+          {{ title_banner_html }}
+          {{ tagline_html }}
+          {{ year_director_html }}
+          {{ cast_html }}
+          {{ plot_html }}
+          </div>
+          <div class="meta-footer">
+          <div class="badges">
+            {{ rating_html }}
+            {{ imdb_badge_html }}
+            {{ resolution_badge_html }}
+            {{ aspect_ratio_badge_html }}
+            <span class="badge">{{ video_codec }}</span>
+            {{ container_badge_html }}
+            <span class="badge">{{ audio_codec }}{{ channels_suffix }}</span>
+            <span class="badge">{{ hdr_type }}</span>
+            {{ studio_badge_html }}
+            <span class="badge {{ audio_badge_extra_class }}" data-current="{{ current_audio }}" data-all="{{ all_audio_languages_str }}" data-type="audio">
+              Audio: <span class="current-lang">{{ current_audio }}</span>
+              <span class="all-langs" style="display: none;">{{ all_audio_languages_str }}</span>
+            </span>
+            <span class="badge {{ subtitle_badge_extra_class }}" data-current="{{ current_subtitle }}" data-all="{{ all_subtitle_languages_str }}" data-type="subtitle">
+              Subs: <span class="current-lang">{{ current_subtitle }}</span>
+              <span class="all-langs" style="display: none;">{{ all_subtitle_languages_str }}</span>
+            </span>
+            {{ kind_badge_html }}
+            {{ genre_badges_html }}
+          </div>
+          {{ up_next_html }}
+          <div class="progress-wrapper">
+            <span class="badge" id="time-display" style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+              <img id="playback-button" src="/play-button.png" alt="Play" style="width: 20px; height: 20px; opacity: 1; transition: opacity 0.5s ease;">
+              {{ elapsed_display }} / {{ duration_display }}
+            </span>
+            <div class="progress-container">
+              <div class="progress">
+                <div class="bar" style="width: {{ percent }}%;"></div>
+              </div>
+            </div>
+          </div>
+          </div>
+        </div>
+      </div>
+      
+      {% include 'partials/side_panel.html' %}
+    </body>
+    </html>
+{% endautoescape %}
